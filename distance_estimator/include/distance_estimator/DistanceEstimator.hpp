@@ -23,30 +23,22 @@
 
 class DistanceEstimator {
     public:
-        cv::Mat chuj2;
-        bool chujFlag; 
-        std::string chujText;
-        void callbackChuj(int, int, int);
-        DistanceEstimator(ros::NodeHandle& nodeHandle);
+        DistanceEstimator(ros::NodeHandle& nodeHandle, bool debug);
 
-        void callback(const sensor_msgs::Image::ConstPtr& image,
-                      const sensor_msgs::LaserScan::ConstPtr& scan,
+        void callback(const sensor_msgs::LaserScan::ConstPtr& scan,
                       const object_detector::DetectionBundle::ConstPtr& bundle_i,
                       const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& cloud);
 
     private:
         float Estimate(const object_detector::Detection& det,
-               cv_bridge::CvImagePtr& cv_ptr,
-               const sensor_msgs::LaserScan::ConstPtr& scan,
-               const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& cloud,
-               int w_org, int h_org);
-        message_filters::Subscriber<sensor_msgs::Image> image_sub_;
+                       const sensor_msgs::LaserScan::ConstPtr& scan,
+                       const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& cloud,
+                       int w_org, int h_org);
         message_filters::Subscriber<sensor_msgs::LaserScan> laser_sub_;
         message_filters::Subscriber< pcl::PointCloud<pcl::PointXYZ> > cloud_sub_;
         message_filters::Subscriber<object_detector::DetectionBundle> detect_sub_;
 
         typedef message_filters::sync_policies::ApproximateTime<
-                    sensor_msgs::Image,
                     sensor_msgs::LaserScan,
                     object_detector::DetectionBundle,
                     pcl::PointCloud<pcl::PointXYZ>> MySyncPolicy;
@@ -54,9 +46,9 @@ class DistanceEstimator {
         boost::shared_ptr<Sync> sync_;
         ros::Publisher publisher_;
         ros::NodeHandle nodeHandle_;
-        ros::Publisher vis_publisher_;
-        ros::Publisher vis_publisher_2;
-        float camera_FOV;
+        ros::Publisher laser_publisher_;
+        ros::Publisher cloud_publisher_;
         float shrinkage;
+        bool debug_;
 };
 

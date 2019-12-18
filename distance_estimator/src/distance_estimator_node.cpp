@@ -5,7 +5,7 @@ int main(int argc, char **argv) {
     ros::init(argc, argv, "distance_estimator");
     ros::NodeHandle nodeHandle("~");
     
-    DistanceEstimator distanceEstimator(nodeHandle);
+    DistanceEstimator distanceEstimator(nodeHandle, true);
 
     ros::spin();
     return 0;

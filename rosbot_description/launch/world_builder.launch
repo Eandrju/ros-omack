@@ -1,0 +1,19 @@
+<?xml version='1.0'?>
+<launch>
+    <!-- these are the arguments you canass this launch file, for exampleaused:=true -->
+    <arg name="paused" default="true"/>
+    <arg name="use_sim_time" default="true"/>
+    <arg name="gui" default="true"/>
+    <arg name="headless" default="false"/>
+    <arg name="debug" default="true"/>
+    
+    <!-- We resume the logic in empty_world.launch   -->
+    <include file="$(find gazebo_ros)/launch/empty_world.launch">
+        <arg name="debug" value="$(arg debug)" />
+        <arg name="verbose" value="true" />
+        <arg name="gui" value="$(arg gui)" />
+        <arg name="paused" value="$(arg paused)"/>
+        <arg name="world_name" value="$(find rosbot_description)/worlds/office_1.world"/>
+    </include>
+
+  </launch>
