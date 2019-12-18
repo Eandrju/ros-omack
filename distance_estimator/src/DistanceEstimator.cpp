@@ -21,9 +21,9 @@ DistanceEstimator::DistanceEstimator(ros::NodeHandle& nodeHandle, bool debug=fal
             "/distance_estimator/detection_bundle", 10);
     if (debug_) {
         laser_publisher_ = nodeHandle.advertise<sensor_msgs::LaserScan>(
-                        "distance_estimator/scan", 0);
+                        "/distance_estimator/scan", 10);
         cloud_publisher_ = nodeHandle.advertise<pcl::PointCloud<pcl::PointXYZ>>(
-                        "/distance_estimator/points", 0);
+                        "/distance_estimator/points", 1);
     }
 
     // other
@@ -43,7 +43,7 @@ float DistanceEstimator::Estimate(
     int w_shr = (int)det.w * shrinkage;
     int h_shr = (int)det.h * shrinkage;
 
-    min_distance = 1000000.;
+    min_distance = std::numeric_limits<float>::infinity();
     for (int i = y0_shr; i < y0_shr + h_shr; ++i) {
         for (int j = x0_shr; j < x0_shr + w_shr; ++j) {
             int idx = i * cloud->width + j;
@@ -60,8 +60,9 @@ float DistanceEstimator::Estimate(
     
     if (debug_) {
         pcl::PointCloud<pcl::PointXYZ>::Ptr msg (new pcl::PointCloud<pcl::PointXYZ>);
-        msg->header.frame_id = "some_frame";
-        msg->height = msg->width = 1;
+        msg->header.frame_id = cloud->header.frame_id;
+        msg->height = h_shr;
+        msg->width = w_shr;
         for (int i = y0_shr; i < y0_shr + h_shr; ++i) {
             for (int j = x0_shr; j < x0_shr + w_shr; ++j) {
                 int idx = i * cloud->width + j;
@@ -71,7 +72,6 @@ float DistanceEstimator::Estimate(
                 msg->points.push_back(pcl::PointXYZ(x, y, z));
             }
         } 
-                    
         pcl_conversions::toPCL(ros::Time::now(), msg->header.stamp);
         cloud_publisher_.publish(msg);
     }
@@ -81,12 +81,11 @@ float DistanceEstimator::Estimate(
     {
         float angle_min = scan->angle_min;
         float increment = scan->angle_increment;
-  
 
         // TODO change the the way you compute start and angle of lidar analysis
         // get them from cloud
         
-        float camera_FOV = M_PI;
+        float camera_FOV = M_PI/3.;
         float start_angle = (float)det.x0 / (float)w_org * camera_FOV - camera_FOV / 2;
         float end_angle = (float)(det.x0 + det.w) / (float)w_org * camera_FOV - camera_FOV / 2;
 
@@ -98,27 +97,35 @@ float DistanceEstimator::Estimate(
         int end_idx = (int)( (start_angle - angle_min) / (float)increment );
         int start_idx = (int)( (end_angle - angle_min) / (float)increment );
 
-        min_distance = 10000.;
+        min_distance = std::numeric_limits<float>::infinity();
+        if (start_idx > end_idx) {
+            std::swap(start_idx, end_idx);
+        }
+
         for (int i = start_idx; i < end_idx + 1; i++) {
             float r = scan->ranges[i];  
             if (r < scan->range_max && r > scan->range_min && r < min_distance) {
                 min_distance = r;
             }
         }
-        std::cout << "min_distance LIDAR: " << min_distance << std::endl;
         
         if (debug_) {
             sensor_msgs::LaserScan::Ptr msg (new sensor_msgs::LaserScan);
-            msg->header.frame_id = "some_frame";
-            msg->angle_min = scan->angle_min;
-            msg->angle_max = scan->angle_max;
+            msg->header.frame_id = "laser"; 
+            msg->header.stamp = scan->header.stamp;
+            msg->angle_min = start_idx * scan->angle_increment - M_PI;
+            msg->angle_max = end_idx * scan->angle_increment - M_PI;
             msg->angle_increment = scan->angle_increment;
             msg->range_min = scan->range_min;
             msg->range_max = scan->range_max;
             for (int i = start_idx; i < end_idx + 1; i++) {
                 msg->ranges.push_back(scan->ranges[i]);
+                msg->intensities.push_back(scan->intensities[i]);
+                std::cout << msg->ranges.size() << std::endl;
+                std::cout << "end: " << end_idx << ", start: " << start_idx << std::endl;
             }
             laser_publisher_.publish(msg);
+
         }
     }
     return min_distance;
@@ -141,10 +148,6 @@ void DistanceEstimator::callback(
         d->y0 = boxes_i[i].y0;
         d->h = boxes_i[i].h;
         d->w = boxes_i[i].w;
-        d->x0 = (int)( boxes_i[i].x0 + (1.0 - shrinkage) / 2.0 * boxes_i[i].w );
-        d->y0 = (int)( boxes_i[i].y0 + (1.0 - shrinkage) / 2.0 * boxes_i[i].h );
-        d->w = (int)boxes_i[i].w * shrinkage;
-        d->h = (int)boxes_i[i].h * shrinkage;
         d->certainty = boxes_i[i].certainty;
         d->class_id = boxes_i[i].class_id;
         d->distance = Estimate(boxes_i[i], scan, cloud,

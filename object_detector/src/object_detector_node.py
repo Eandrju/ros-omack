@@ -19,7 +19,7 @@ class DetectorWrapper:
         self.subscriber = rospy.Subscriber('/camera/rgb/image_raw/compressed',
                                            CompressedImage, self.callback,
                                            queue_size=1, buff_size=2**24)
-        self.detector = Detector(conf_thresh=0.5, resolution=320, debug=True)
+        self.detector = Detector(conf_thresh=0.35, resolution=320, debug=True)
 
     def callback(self, ros_data):
         # get image
