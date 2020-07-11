@@ -27,7 +27,7 @@ DistanceEstimator::DistanceEstimator(ros::NodeHandle& nodeHandle, bool debug=fal
     }
 
     // other
-    shrinkage = 0.5; // parameter tuning shrinkage of box before distance estimation
+    shrinkage = 0.5;  // parameter tuning shrinkage of box before distance estimation
 }
 
 float DistanceEstimator::Estimate(
@@ -36,14 +36,14 @@ float DistanceEstimator::Estimate(
                const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& cloud,
                int w_org, int h_org)
 {
+    float min_distance;
     // POINTCLOUD
     int x0_shr = (int)( det.x0 + (1.0 - shrinkage) / 2.0 * det.w );
     int y0_shr = (int)( det.y0 + (1.0 - shrinkage) / 2.0 * det.h );
     int w_shr = (int)det.w * shrinkage;
     int h_shr = (int)det.h * shrinkage;
 
-    float distance;
-    std::vector<float> distances;
+    min_distance = std::numeric_limits<float>::infinity();
     for (int i = y0_shr; i < y0_shr + h_shr; ++i) {
         for (int j = x0_shr; j < x0_shr + w_shr; ++j) {
             int idx = i * cloud->width + j;
@@ -51,40 +51,12 @@ float DistanceEstimator::Estimate(
             float y = cloud->points[idx].y;
             float z = cloud->points[idx].z;
 
-            float d =  sqrt(x*x + y*y + z*z);
- 
-            distances.push_back(d);
+            float distance =  sqrt(x*x + y*y + z*z);
+            if (distance < min_distance) {
+                min_distance = distance;
+            }
         }
     }
-
-    /*
-     * In case of even number of elements this
-     * implementation returns pseudo-median
-     * n/2th element, rather than mean of middle 
-     * two elements, but has linear complexity
-    */
-    if(distances.size() != 0) {
-        size_t n = distances.size() / 2;
-        std::nth_element(distances.begin(), distances.begin()+n, distances.end());
-        std::cout << "vector size " << distances.size() << " n " << n << " distance " << distances[n] << std::endl;
-        
-        distance = distances[n];
-    }
-            
-
-    //for (int i = y0_shr; i < y0_shr + h_shr; ++i) {
-    //    for (int j = x0_shr; j < x0_shr + w_shr; ++j) {
-    //        int idx = i * cloud->width + j;
-    //        float x = cloud->points[idx].x;
-    //        float y = cloud->points[idx].y;
-    //        float z = cloud->points[idx].z;
-
-    //        float distance =  sqrt(x*x + y*y + z*z);
-    //        if (distance < min_distance) {
-    //            min_distance = distance;
-    //        }
-    //    }
-    //}
     
     if (debug_) {
         pcl::PointCloud<pcl::PointXYZ>::Ptr msg (new pcl::PointCloud<pcl::PointXYZ>);
@@ -105,91 +77,60 @@ float DistanceEstimator::Estimate(
     }
 
     // LIDAR
-    if (std::isnan(distance)) 
+    if (std::isinf(min_distance) || debug_) 
     {
         float angle_min = scan->angle_min;
         float increment = scan->angle_increment;
-        distance = std::numeric_limits<float>::infinity();
 
         // TODO change the the way you compute start and angle of lidar analysis
         // get them from cloud
         
-        //float camera_FOV = M_PI/3.;
-        //float start_angle = (float)det.x0 / (float)w_org * camera_FOV - camera_FOV / 2;
-        //float end_angle = (float)(det.x0 + det.w) / (float)w_org * camera_FOV - camera_FOV / 2;
+        float camera_FOV = M_PI/3.;
+        float start_angle = (float)det.x0 / (float)w_org * camera_FOV - camera_FOV / 2;
+        float end_angle = (float)(det.x0 + det.w) / (float)w_org * camera_FOV - camera_FOV / 2;
+
+        // map angles to laser frame
+        std::cout << "1 Angle from " << start_angle << " to " << end_angle << std::endl;
+        start_angle = start_angle > 0 ? -(start_angle - M_PI) : -(start_angle + M_PI);
+        end_angle = end_angle > 0 ? -(end_angle - M_PI) : -(end_angle + M_PI);
         
-        int n = scan->ranges.size();
-        float shrinkage_ratio = (float)det.w / (float)w_org * (1. - shrinkage) / 2.;
-        float first_ratio = (float)det.x0 / (float)w_org + shrinkage_ratio;
-        float second_ratio = (float)(det.x0 + det.w) / (float)w_org - shrinkage_ratio;
-        // assuming 360 FOV of lidar and 60 FOV of camera
-        // fking stupid 0 idx of lidar is in fornt of robot and 1/4 of idx_max is on his 9 (clock)
-        int start_idx = (int)(-n * 1/12 + (1 - second_ratio) * n/6);
-        int end_idx = (int)(-n * 1/12 + (1 - first_ratio) * n/6);
 
-        std::vector<int> active_idxs;
+        int end_idx = (int)( (start_angle - angle_min) / (float)increment );
+        int start_idx = (int)( (end_angle - angle_min) / (float)increment );
 
-        //for (int i = -60; i <  61; i++) {
-        //    if( (i+60)%60 == 0)
-        //        if(i<0)
-        //            active_idxs.push_back(i+n);
-        //        else
-        //            active_idxs.push_back(i);
-        //}
+        min_distance = std::numeric_limits<float>::infinity();
+        if (start_idx > end_idx) {
+            std::swap(start_idx, end_idx);
+        }
 
         for (int i = start_idx; i < end_idx + 1; i++) {
-            std::cout << "+";
-            float r;
-
-            if (i < 0){
-                active_idxs.push_back(i+n);
-                r = scan->ranges[i+n];  
-            } else {
-                active_idxs.push_back(i);
-                r = scan->ranges[i];  
-            }
-
-
-
-            if (r < scan->range_max && r > scan->range_min && r < distance) {
-                distance = r;
+            float r = scan->ranges[i];  
+            if (r < scan->range_max && r > scan->range_min && r < min_distance) {
+                min_distance = r;
             }
         }
         
-        
-        debug_ = true;
         if (debug_) {   
-            //std::cout << "Angle from " << start_angle << " to " << end_angle << std::endl;
-            std::cout << "\nLaser minimal distance: " << distance << std::endl;
-            std::cout << "Active points number: " << active_idxs.size() << std::endl;
-            std::cout << "angle min: " << scan->angle_min << " , angle max: "; 
-            std::cout << scan->angle_max << ", angle inc: " << scan->angle_increment << std::endl;
+            std::cout << "2 Angle from " << start_angle << " to " << end_angle << std::endl;
+            std::cout << "angle min: " << scan->angle_min << " , angle max: " << scan->angle_max << ", angle inc: " << scan->angle_increment << std::endl;
             std::cout << "Index from " << start_idx << " to " << end_idx << std::endl;
-            std::cout << "\n\n";
             sensor_msgs::LaserScan::Ptr msg (new sensor_msgs::LaserScan);
             msg->header.frame_id = "laser"; 
             msg->header.stamp = scan->header.stamp;
-            msg->angle_min = scan->angle_min;
-            msg->angle_max = scan->angle_max;
+            msg->angle_min = start_idx * scan->angle_increment - M_PI;
+            msg->angle_max = end_idx * scan->angle_increment - M_PI;
             msg->angle_increment = scan->angle_increment;
-            msg->range_min = 0.;
+            msg->range_min = scan->range_min;
             msg->range_max = scan->range_max;
-            //for (int i = start_idx; i < end_idx + 1; i++) {
-            for (int i = 0; i < n; i++) {
-                // check if idx was previously detected as active (near object)
-                if(std::find(active_idxs.begin(), active_idxs.end(), i) != active_idxs.end()){
-                    msg->ranges.push_back(scan->ranges[i]);
-                    msg->intensities.push_back(scan->intensities[i]);
-                } else {
-                    msg->ranges.push_back(0.);
-                    msg->intensities.push_back(0.);
-                }
+            for (int i = start_idx; i < end_idx + 1; i++) {
+                msg->ranges.push_back(scan->ranges[i]);
+                msg->intensities.push_back(scan->intensities[i]);
             }
             laser_publisher_.publish(msg);
 
         }
     }
-    return distance;
+    return min_distance;
 }
 
 void DistanceEstimator::callback(
@@ -219,4 +160,3 @@ void DistanceEstimator::callback(
     bundle_o.detections = boxes_o;
     publisher_.publish(bundle_o);
 }
-

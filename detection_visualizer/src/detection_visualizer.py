@@ -37,8 +37,8 @@ class VisualizerWrapper:
         for d in bundle.detections:
             start = d.x0, d.y0
             end = d.x0 + d.w, d.y0 + d.h
-            color = self.colors[d.class_id]
-            label = self.labels[d.class_id]
+            color = (d.color.r, d.color.g, d.color.b)
+            label = d.class_name
             image = cv2.rectangle(image, start, end, color, self.rectThickness)
             x = self.rectThickness
             # label rectangle and text
