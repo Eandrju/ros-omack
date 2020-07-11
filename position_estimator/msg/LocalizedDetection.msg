@@ -1,0 +1,4 @@
+string class_name
+geometry_msgs/PointStamped point
+float32 position_certainty
+float32 class_certainty

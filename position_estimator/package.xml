@@ -1,0 +1,56 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>position_estimator</name>
+  <version>0.0.0</version>
+  <description>The position_estimator package</description>
+  <maintainer email="alfierra@todo.todo">alfierra</maintainer>
+  <license>TODO</license>
+
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <build_depend>libpcl-all-dev</build_depend>
+
+  <exec_depend>libpcl-all</exec_depend>
+
+  <build_depend>message_generation</build_depend>
+  <exec_depend>message_runtime</exec_depend> 
+
+
+  <build_depend>pcl_conversions</build_depend>
+  <exec_depend>pcl_conversions</exec_depend>
+
+  <build_depend>pcl_ros</build_depend>
+  <exec_depend>pcl_ros</exec_depend>
+      
+  <build_depend>roscpp</build_depend>
+  <exec_depend>roscpp</exec_depend>
+  <build_export_depend>roscpp</build_export_depend>
+
+  <build_depend>sensor_msgs</build_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <build_export_depend>sensor_msgs</build_export_depend>
+
+  <build_depend>geometry_msgs</build_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <build_export_depend>geometry_msgs</build_export_depend>
+  
+  <build_depend>visualization_msgs</build_depend>
+  <exec_depend>visualization_msgs</exec_depend>
+  <build_export_depend>visualization_msgs</build_export_depend>
+
+
+  <build_depend>message_filters</build_depend>
+  <exec_depend>message_filters</exec_depend>
+  <build_export_depend>message_filters</build_export_depend>
+
+  <build_depend>object_detector</build_depend>
+  <exec_depend>object_detector</exec_depend>
+
+
+  <!-- The export tag contains other, unspecified, tags -->
+  <export>
+    <!-- Other tools can request additional information be placed here -->
+
+  </export>
+</package>
