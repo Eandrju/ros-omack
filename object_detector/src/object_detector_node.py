@@ -61,6 +61,10 @@ class DetectorWrapper:
             d.y0 = int(box[2])
             d.w  = int(box[3]) - d.x0
             d.h  = int(box[4]) - d.y0
+
+            if d.w == 0 or d.h == 0:
+                continue
+
             d.certainty =  float(box[5])
             d.class_name = self.detector.classes[int(box[-1])]
             color = self.detector.colors[int(box[-1])]
@@ -75,7 +79,8 @@ class DetectorWrapper:
         bundle.frame_width = image.shape[1]
 
 
-        self.bundle_pub.publish(bundle)
+        if len(bundle.detections) > 0:
+            self.bundle_pub.publish(bundle)
 
         # create message
         msg = CompressedImage()
