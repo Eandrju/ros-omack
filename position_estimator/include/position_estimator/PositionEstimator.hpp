@@ -17,6 +17,7 @@
 #include <image_transport/image_transport.h>
 #include <pcl_ros/point_cloud.h>
 #include <pcl/point_types.h>
+#include <tf/transform_listener.h>
 #include <ros/ros.h>
 #include <vector>
 #include <string>
@@ -26,18 +27,21 @@
 
 class PositionEstimator {
     public:
-        PositionEstimator(ros::NodeHandle& nodeHandle, bool debug);
+        PositionEstimator(ros::NodeHandle&, bool);
 
         void callback(const sensor_msgs::LaserScan::ConstPtr& scan,
             const object_detector::DetectionBundle::ConstPtr& bundle_i,
             const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& cloud);
 
     private:
-        std::tuple<float, float, float> estimate_position(
+        std::tuple<geometry_msgs::PointStamped, float> estimate_position(
             const object_detector::Detection& det,
             const sensor_msgs::LaserScan::ConstPtr& scan,
             const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& cloud,
             int w_org, int h_org);
+        geometry_msgs::PointStamped transform_point(
+            std::string out_frame, 
+            geometry_msgs::PointStamped point);
         message_filters::Subscriber<sensor_msgs::LaserScan> laser_sub_;
         message_filters::Subscriber< pcl::PointCloud<pcl::PointXYZ> > cloud_sub_;
         message_filters::Subscriber<object_detector::DetectionBundle> detect_sub_;
@@ -52,6 +56,7 @@ class PositionEstimator {
         ros::NodeHandle nodeHandle_;
         ros::Publisher laser_publisher_;
         ros::Publisher cloud_publisher_;
+        tf::TransformListener tf_listener;
         float shrinkage;
         bool debug;
 };

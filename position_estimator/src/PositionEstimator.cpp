@@ -4,9 +4,13 @@
 using namespace object_detector;
 using namespace message_filters;
 using namespace position_estimator;
+using namespace geometry_msgs;
 using namespace std;
 
-PositionEstimator::PositionEstimator(ros::NodeHandle& nodeHandle, bool debug=false) :
+PositionEstimator::PositionEstimator(
+    ros::NodeHandle& nodeHandle,
+    bool debug=false
+):
     nodeHandle_(nodeHandle), debug(debug)
 {
     // subscribers:
@@ -32,9 +36,9 @@ PositionEstimator::PositionEstimator(ros::NodeHandle& nodeHandle, bool debug=fal
     shrinkage = 0.5; // parameter tuning shrinkage of box before distance estimation
 }
 
-// TODO decide which frame is used when returning point laser or camera, rather importand TODO
+// TODO decide which frame is used when returning point laser or camera, rather important TODO
 
-tuple<float, float, float> PositionEstimator::estimate_position(
+tuple<geometry_msgs::PointStamped, float> PositionEstimator::estimate_position(
     const object_detector::Detection& det,
     const sensor_msgs::LaserScan::ConstPtr& scan, 
     const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& cloud,
@@ -47,16 +51,17 @@ tuple<float, float, float> PositionEstimator::estimate_position(
     int w_shr = (int)det.w * shrinkage;
     int h_shr = (int)det.h * shrinkage;
 
-    float sum_x = 0.;
-    float sum_y = 0.;
-    float counter = 0;
+
+    float x = 0;
+    float y = 0;
+    float z = 0;
+
     for (int i = y0_shr; i < y0_shr + h_shr; ++i) {
         for (int j = x0_shr; j < x0_shr + w_shr; ++j) {
             int idx = i * cloud->width + j;
-            if (not isinf(cloud->points[idx].x)) {
-                sum_x += cloud->points[idx].x;
-                sum_y += cloud->points[idx].y;
-                counter++;
+            if (not isnan(cloud->points[idx].x)) {
+                 x = cloud->points[idx].x;
+                 y = cloud->points[idx].y;
             }
         }
     }
@@ -69,9 +74,9 @@ tuple<float, float, float> PositionEstimator::estimate_position(
         for (int i = y0_shr; i < y0_shr + h_shr; ++i) {
             for (int j = x0_shr; j < x0_shr + w_shr; ++j) {
                 int idx = i * cloud->width + j;
-                float x = cloud->points[idx].x;
-                float y = cloud->points[idx].y;
-                float z = cloud->points[idx].z;
+                x = cloud->points[idx].x;
+                y = cloud->points[idx].y;
+                z = cloud->points[idx].z;
                 msg->points.push_back(pcl::PointXYZ(x, y, z));
             }
         } 
@@ -79,8 +84,16 @@ tuple<float, float, float> PositionEstimator::estimate_position(
         cloud_publisher_.publish(msg);
     }
 
-    if (counter != 0)
-        return make_tuple(sum_x/counter, sum_y/counter, 0.);
+    geometry_msgs::PointStamped foo_point, map_point;
+    if (x != 0 and not isnan(x)){
+        foo_point.header.frame_id = cloud->header.frame_id;
+        foo_point.header.stamp = scan->header.stamp;
+        foo_point.point.x = x;
+        foo_point.point.y = y; 
+        foo_point.point.z = z;
+        map_point = transform_point("map", foo_point);
+        return make_tuple(map_point, 0.);
+    }
          
     // LIDAR
     float angle_min = scan->angle_min;
@@ -109,11 +122,11 @@ tuple<float, float, float> PositionEstimator::estimate_position(
         if (i < 0){
             active_idxs.push_back(i+n);
             r = scan->ranges[i+n];  
-            angle = scan->range_min + (scan->angle_increment * (i+n));
+            a = scan->angle_min + (scan->angle_increment * (i+n));
         } else {
             active_idxs.push_back(i);
             r = scan->ranges[i];  
-            angle = scan->range_min + (scan->angle_increment * i);
+            a = scan->angle_min + (scan->angle_increment * i);
         }
 
         if (r < scan->range_max && r > scan->range_min && r < distance) {
@@ -125,8 +138,7 @@ tuple<float, float, float> PositionEstimator::estimate_position(
     if (debug) {   
         std::cout << "\nLaser minimal distance: " << distance << std::endl;
         std::cout << "Active points number: " << active_idxs.size() << std::endl;
-        std::cout << "angle min: " << scan->angle_min << " , angle max: "; 
-        std::cout << scan->angle_max << ", angle inc: " << scan->angle_increment << std::endl;
+        std::cout << "angle: " << angle << endl;
         std::cout << "Index from " << start_idx << " to " << end_idx << std::endl;
         std::cout << "\n\n";
         sensor_msgs::LaserScan::Ptr msg (new sensor_msgs::LaserScan);
@@ -149,7 +161,15 @@ tuple<float, float, float> PositionEstimator::estimate_position(
         }
         laser_publisher_.publish(msg);
     }
-    return make_tuple(distance * cos(angle), distance * sin(angle), 0);
+
+    geometry_msgs::PointStamped laser_point;
+    laser_point.header.frame_id = "laser";
+    laser_point.header.stamp = scan->header.stamp;
+    laser_point.point.x = distance * cos(angle);
+    laser_point.point.y = distance * sin(angle);
+    laser_point.point.z = 0;
+    map_point = transform_point("map", laser_point);
+    return make_tuple(map_point, 0.);
 }
 
 void PositionEstimator::callback(
@@ -174,19 +194,26 @@ void PositionEstimator::callback(
             cloud,
             bundle_i->frame_width,
             bundle_i->frame_height);
-        geometry_msgs::PointStamped point;
-        point.header.frame_id = "laser";
-        point.header.stamp = ros::Time();
-        point.point.x = get<0>(tuple);
-        point.point.y = get<1>(tuple);
-        point.point.z = 0.;
 
-        detection.point = point;
-        detection.position_certainty = get<2>(tuple);
+        detection.point = get<0>(tuple);
+        detection.position_certainty = get<1>(tuple);
         publisher_.publish(detection);
-        if(debug) {
-            cout << "Estimated position: " << point.point.x << point.point.y << endl;
-        }
     }
+}
+
+
+geometry_msgs::PointStamped PositionEstimator::transform_point(
+    string out_frame,
+    geometry_msgs::PointStamped in_point)
+{
+    cout << "Converting point from " << in_point.header.frame_id << " frame to " << out_frame << " frame." << endl;
+    geometry_msgs::PointStamped out_point;
+    try{
+        tf_listener.transformPoint(out_frame, in_point, out_point);
+    }
+    catch(tf::TransformException& ex){
+        ROS_ERROR("Received an exception trying to transform a point: %s", ex.what());
+    }
+    return out_point;
 }
 
