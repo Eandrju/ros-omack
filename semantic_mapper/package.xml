@@ -1,0 +1,34 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>semantic_mapper</name>
+  <version>0.0.0</version>
+  <description>The semantic_mapper package</description>
+  <maintainer email="alfierra@todo.todo">alfierra</maintainer>
+  <license>TODO</license>
+
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <build_depend>libpcl-all-dev</build_depend>
+
+  <exec_depend>libpcl-all</exec_depend>
+  <exec_depend>message_runtime</exec_depend> 
+
+  <build_depend>roscpp</build_depend>
+  <exec_depend>roscpp</exec_depend>
+  <build_export_depend>roscpp</build_export_depend>
+
+  <build_depend>visualization_msgs</build_depend>
+  <exec_depend>visualization_msgs</exec_depend>
+  <build_export_depend>visualization_msgs</build_export_depend>
+
+  <build_depend>position_estimator</build_depend>
+  <exec_depend>position_estimator</exec_depend>
+
+
+  <!-- The export tag contains other, unspecified, tags -->
+  <export>
+    <!-- Other tools can request additional information be placed here -->
+
+  </export>
+</package>
