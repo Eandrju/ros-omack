@@ -10,7 +10,7 @@ from object_detector.msg import Detection
 class VisualizerWrapper:
     def __init__(self):
         self.image_sub = mf.Subscriber("/camera/rgb/image_raw/compressed", CompressedImage)
-        self.bundle_sub = mf.Subscriber("/distance_estimator/detection_bundle", DetectionBundle)
+        self.bundle_sub = mf.Subscriber("/detector/detection_bundle", DetectionBundle)
 
         self.ts = mf.TimeSynchronizer([self.image_sub, self.bundle_sub], 20)
         self.ts.registerCallback(self.callback)
@@ -63,17 +63,17 @@ class VisualizerWrapper:
                                 (start[0] + x, start[1] + text_size[1] + x,),
                                 self.font, self.fontScale, (255, 255, 255),
                                 self.fontSize, cv2.LINE_AA)
-            # distance rectangle and text
-            text = '{0:.2f} m'.format(d.distance)
-            text_size = cv2.getTextSize(text, self.font, self.fontScale, self.fontSize)[0]
-            image = cv2.rectangle(image,
-                                  (end[0] - text_size[0] - x, end[1] - text_size[1] - x,),
-                                  (end[0] - x, end[1] - x,),
-                                  tuple(color), -1)
-            image = cv2.putText(image, text,
-                                (end[0] - text_size[0] - x, end[1] - x,),
-                                self.font, self.fontScale, (255, 255, 255),
-                                self.fontSize, cv2.LINE_AA)
+           # # distance rectangle and text
+           # text = '{0:.2f} m'.format(d.distance)
+           # text_size = cv2.getTextSize(text, self.font, self.fontScale, self.fontSize)[0]
+           # image = cv2.rectangle(image,
+           #                       (end[0] - text_size[0] - x, end[1] - text_size[1] - x,),
+           #                       (end[0] - x, end[1] - x,),
+           #                       tuple(color), -1)
+           # image = cv2.putText(image, text,
+           #                     (end[0] - text_size[0] - x, end[1] - x,),
+           #                     self.font, self.fontScale, (255, 255, 255),
+           #                     self.fontSize, cv2.LINE_AA)
 
         msg = CompressedImage()
         msg.header.stamp = img_msg.header.stamp
