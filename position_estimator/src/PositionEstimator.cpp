@@ -8,40 +8,210 @@ using namespace geometry_msgs;
 using namespace std;
 
 PositionEstimator::PositionEstimator(
-    ros::NodeHandle& nodeHandle,
+    ros::NodeHandle& node_handle,
     bool debug=false
 ):
-    nodeHandle_(nodeHandle), debug(debug)
+    node_handle(node_handle), debug(debug)
 {
     // subscribers:
-    laser_sub_.subscribe(nodeHandle, "/scan", 1);
-    detect_sub_.subscribe(nodeHandle, "/detector/detection_bundle", 1);
-    cloud_sub_.subscribe(nodeHandle, "/camera/depth/points", 1);
+    laser_sub_.subscribe(node_handle, "/scan", 1);
+    detect_sub_.subscribe(node_handle, "/detector/detection_bundle", 1);
+    cloud_sub_.subscribe(node_handle, "/camera/depth/points", 1);
 
     // msg synchronization:
     sync_.reset(new Sync(MySyncPolicy(10), laser_sub_, detect_sub_, cloud_sub_));
     sync_->registerCallback(boost::bind(&PositionEstimator::callback, this, _1, _2, _3));
 
     // publishers:
-    publisher_ = nodeHandle.advertise<LocalizedDetection>(
+    publisher_ = node_handle.advertise<LocalizedDetection>(
             "/position_estimator/detection", 10);
     if (debug) {
-        laser_publisher_ = nodeHandle.advertise<sensor_msgs::LaserScan>(
+        laser_publisher_ = node_handle.advertise<sensor_msgs::LaserScan>(
                         "/position_estimator/scan", 10);
-        cloud_publisher_ = nodeHandle.advertise<pcl::PointCloud<pcl::PointXYZ>>(
-                        "/position_estimator/points", 1);
+        cloud_publisher_ = node_handle.advertise<pcl::PointCloud<pcl::PointXYZRGB>>(
+                        "/position_estimator/points", 10);
     }
 
-    // other
-    shrinkage = 0.5; // parameter tuning shrinkage of box before distance estimation
 }
 
-// TODO decide which frame is used when returning point laser or camera, rather important TODO
+void PositionEstimator::filter_cloud(
+    const object_detector::Detection& det,
+    const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr& cloud
+    )
+{ 
+
+    cout << "height: " << cloud->height << " width: " << cloud->width << endl;
+    /* pcl::PointCloud<pcl::PointXYZRGB>::Ptr sliced_cloud (new pcl::PointCloud<pcl::PointXYZRGB>); */
+
+    std::vector<pcl::PointIndices> indices;
+    extract_region_of_interest(cloud, det, indices);
+
+    cout << " size: " << sliced_cloud->size() << endl;
+
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr global_frame_cloud (new pcl::PointCloud<pcl::PointXYZRGB>);
+    transform_to_global_frame(sliced_cloud, global_frame_cloud);
+    
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr filtered_cloud (new pcl::PointCloud<pcl::PointXYZRGB>);
+    filter_out_ground(global_frame_cloud, filtered_cloud);
+
+    std::vector<pcl::PointIndices> object_indices;
+    get_clusters(filtered_cloud, &object_indices);
+    
+    pcl::ExtractIndices<pcl::PointXYZRGB> extractor;
+    extractor.setInputCloud(filtered_cloud);
+
+    cout << "Extracted " << object_indices.size() << " clusters." << endl;
+
+    int flag;
+    if (not node_handle.getParam("/detector/cluster/flag", flag)) {
+        flag = 1;
+    }
+
+    
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr output_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
+    output_cloud->header = filtered_cloud->header;
+
+    if (flag){
+        for (int i = 0; i < object_indices.size(); ++i) {
+            pcl::PointCloud<pcl::PointXYZRGB>::Ptr extracted_cluster(new pcl::PointCloud<pcl::PointXYZRGB>);
+            pcl::PointIndices::Ptr indices(new pcl::PointIndices);
+            *indices = object_indices[i];
+            extractor.setIndices(indices);
+            extractor.filter(*extracted_cluster);
+            int r = rand() % 255;
+            int g = rand() % 255;
+            int b = rand() % 255;
+            for (int j=0; j < extracted_cluster->points.size(); ++j) {
+                extracted_cluster->points[j].r = r;
+                extracted_cluster->points[j].g = g;
+                extracted_cluster->points[j].b = b;
+            }
+            *output_cloud += *extracted_cluster;
+            //cloud_publisher_.publish(extracted_cluster);
+        }
+    } else {
+        //cloud_publisher_.publish(filtered_cloud);
+    }
+    cloud_publisher_.publish(output_cloud);
+
+}
+
+void PositionEstimator::filter_out_ground(
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud,
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr output_cloud
+    )
+{
+    float ground_cutoff, ceiling_cutoff;
+    if (not node_handle.getParam("/detector/ground_cutoff", ground_cutoff)) {
+        ground_cutoff = 0.;
+    }
+    if (not node_handle.getParam("/detector/ceiling_cutoff", ceiling_cutoff)) {
+        ceiling_cutoff = 10.;
+    }
+
+    pcl::PassThrough<pcl::PointXYZRGB> pass;
+    pass.setInputCloud (cloud);
+    pass.setFilterFieldName ("z");
+    pass.setFilterLimits (ground_cutoff, ceiling_cutoff);  
+    pass.filter (*output_cloud);
+    output_cloud->header = cloud->header;
+}
+
+void PositionEstimator::extract_region_of_interest(
+    const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr& cloud,
+    const object_detector::Detection& det,
+    pcl::PointIndices* indices
+    )
+{  
+    int x0, x1, y0, y1;
+    int width = cloud->width;
+    int height = cloud->height;
+    float shrinkage_ratio;
+
+    if (not node_handle.getParam("/detector/shrinkage_ratio", shrinkage_ratio)) {
+        shrinkage_ratio = 1.;
+    }
+
+    x0 = (int)( det.x0 + (1. - shrinkage_ratio) / 2. * det.w );
+    x1 = (int)( det.x0 + det.w - (1. - shrinkage_ratio) / 2. * det.w);
+    y0 = (int)( det.y0 + (1. - shrinkage_ratio) / 2. * det.h );
+    y1 = (int)( det.y0 + det.h - (1. - shrinkage_ratio) / 2. * det.h);
+
+    x0 = (x0 < 0) ? 0: x0;
+    x1 = (x1 >= width) ? width-1: x1;
+    y0 = (y0 < 0) ? 0: y0;
+    y1 = (y1 >= height) ? height-1: y1;
+    for (int i = y0; i < y1; ++i) {
+        for (int j = x0; j < x1; ++j) {
+            int idx = i * cloud->width + j;
+            pcl::PointXYZRGB point;
+            point.x = cloud->points[idx].x;
+            point.y = cloud->points[idx].y;
+            point.z = cloud->points[idx].z;
+            point.r = 200;
+            point.b = 100;
+            point.g = 0;
+            output_cloud->points.push_back(point);
+        }
+    }
+    output_cloud->header = cloud->header;
+}
+
+
+void PositionEstimator::transform_to_global_frame(
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud,
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr output_cloud
+    )
+{
+    while (true) {
+        try{
+            //tf_listener.waitForTransform("odom", "camera_depth_frame", ros::Time::now(), ros::Duration(0.1));
+            pcl_ros::transformPointCloud("odom", *cloud, *output_cloud, tf_listener);
+            //tf_listener.lookupTransform("odom", "lookUpTransform", ros::Time(), transform);
+            //pcl_ros::transformPointCloud(*cloud, *output_cloud, transform);
+            break;
+        }
+        catch(tf::ExtrapolationException& ex){   // have no idea why that's not working
+        //catch(...){
+            ROS_INFO("Caught an exception");
+            ros::Duration(0.01).sleep();
+        }
+    }
+}
+
+void PositionEstimator::get_clusters(
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud,
+    std::vector<pcl::PointIndices>* object_indices
+    )
+{
+    float tolerance, min_size;
+    if (not node_handle.getParam("/detector/cluster/tolerance", tolerance)) {
+        tolerance = 0.1;
+    }
+
+    if (not node_handle.getParam("/detector/cluster/min_size", min_size)) {
+        min_size = 10.;
+    }
+
+    pcl::EuclideanClusterExtraction<pcl::PointXYZRGB> euclid;
+    euclid.setInputCloud(cloud);
+    //euclid.setIndices(above_surface_indices);
+    euclid.setClusterTolerance(tolerance);
+    euclid.setMinClusterSize(min_size);
+    euclid.extract(*object_indices);
+}
+                
+
+
+
+
+
+
 
 tuple<geometry_msgs::PointStamped, float> PositionEstimator::estimate_position(
     const object_detector::Detection& det,
     const sensor_msgs::LaserScan::ConstPtr& scan, 
-    const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& cloud,
+    const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr& cloud,
     int w_org, 
     int h_org)
 {
@@ -175,30 +345,37 @@ tuple<geometry_msgs::PointStamped, float> PositionEstimator::estimate_position(
 void PositionEstimator::callback(
            const sensor_msgs::LaserScan::ConstPtr& scan,
            const DetectionBundle::ConstPtr& bundle_i,
-           const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& cloud)
+           const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr& cloud)
 {
-    object_detector::DetectionBundle bundle_o;
-    bundle_o.size = bundle_i->size;
-    bundle_o.header = bundle_i->header;
-    std::vector<object_detector::Detection> boxes_o, boxes_i;
-    boxes_i = bundle_i->detections;
-
+    std::vector<object_detector::Detection> boxes_i = bundle_i->detections;
     for (int i = 0; i < bundle_i->size; ++i) {
-        LocalizedDetection detection;
-        detection.class_certainty = boxes_i[i].certainty;
-        detection.class_name = boxes_i[i].class_name;
-
-        auto tuple = estimate_position(
-            boxes_i[i],
-            scan,
-            cloud,
-            bundle_i->frame_width,
-            bundle_i->frame_height);
-
-        detection.point = get<0>(tuple);
-        detection.position_certainty = get<1>(tuple);
-        publisher_.publish(detection);
+        filter_cloud(boxes_i[i], cloud);
     }
+
+
+
+    //object_detector::DetectionBundle bundle_o;
+    //bundle_o.size = bundle_i->size;
+    //bundle_o.header = bundle_i->header;
+    //std::vector<object_detector::Detection> boxes_o, boxes_i;
+    //boxes_i = bundle_i->detections;
+
+    //for (int i = 0; i < bundle_i->size; ++i) {
+    //    LocalizedDetection detection;
+    //    detection.class_certainty = boxes_i[i].certainty;
+    //    detection.class_name = boxes_i[i].class_name;
+
+    //    auto tuple = estimate_position(
+    //        boxes_i[i],
+    //        scan,
+    //        cloud,
+    //        bundle_i->frame_width,
+    //        bundle_i->frame_height);
+
+    //    detection.point = get<0>(tuple);
+    //    detection.position_certainty = get<1>(tuple);
+    //    publisher_.publish(detection);
+    //}
 }
 
 

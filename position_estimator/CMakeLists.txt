@@ -13,7 +13,7 @@ find_package(catkin REQUIRED COMPONENTS
   object_detector
 )
 find_package( OpenCV REQUIRED )
-#find_package( PCL REQUIRED )
+find_package( PCL REQUIRED )
 
 add_message_files(
     FILES
