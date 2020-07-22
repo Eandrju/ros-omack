@@ -11,7 +11,7 @@ PositionEstimator::PositionEstimator(
     ros::NodeHandle& node_handle,
     bool debug=false
 ):
-    node_handle(node_handle), debug(debug)
+    node_handle(node_handle), debug(debug), tfListener(tf_buffer)
 {
     // subscribers:
     laser_sub_.subscribe(node_handle, "/scan", 1);
@@ -31,6 +31,7 @@ PositionEstimator::PositionEstimator(
         cloud_publisher_ = node_handle.advertise<pcl::PointCloud<pcl::PointXYZRGB>>(
                         "/position_estimator/points", 10);
     }
+    ros::Duration(2).sleep();
 
 }
 
@@ -38,69 +39,82 @@ void PositionEstimator::filter_cloud(
     const object_detector::Detection& det,
     const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr& cloud
     )
-{ 
-
+{
     cout << "height: " << cloud->height << " width: " << cloud->width << endl;
-    /* pcl::PointCloud<pcl::PointXYZRGB>::Ptr sliced_cloud (new pcl::PointCloud<pcl::PointXYZRGB>); */
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr sliced_cloud (new pcl::PointCloud<pcl::PointXYZRGB>);
 
-    std::vector<pcl::PointIndices> indices;
-    extract_region_of_interest(cloud, det, indices);
+    boost::shared_ptr<vector<int> > roi_indices (new vector<int>);
+    extract_region_of_interest(cloud, det, roi_indices);
 
-    cout << " size: " << sliced_cloud->size() << endl;
-
-    pcl::PointCloud<pcl::PointXYZRGB>::Ptr global_frame_cloud (new pcl::PointCloud<pcl::PointXYZRGB>);
-    transform_to_global_frame(sliced_cloud, global_frame_cloud);
-    
-    pcl::PointCloud<pcl::PointXYZRGB>::Ptr filtered_cloud (new pcl::PointCloud<pcl::PointXYZRGB>);
-    filter_out_ground(global_frame_cloud, filtered_cloud);
+    boost::shared_ptr<vector<int> > no_ground_indices (new vector<int>);
+    if (not remove_ground(cloud, roi_indices, no_ground_indices)) return;
 
     std::vector<pcl::PointIndices> object_indices;
-    get_clusters(filtered_cloud, &object_indices);
-    
-    pcl::ExtractIndices<pcl::PointXYZRGB> extractor;
-    extractor.setInputCloud(filtered_cloud);
+    get_clusters(cloud, no_ground_indices, &object_indices);
 
-    cout << "Extracted " << object_indices.size() << " clusters." << endl;
+    // TODO extract cloud length and compare
+    /* pcl::PointCloud<pcl::PointXYZRGB>::Ptr extracted_cluster(new pcl::PointCloud<pcl::PointXYZRGB>); */
+    pcl::ExtractIndices<pcl::PointXYZRGB> extractor;
+    extractor.setInputCloud(cloud);
+    extractor.setIndices(no_ground_indices);
+    extractor.filter(*extracted_cluster);
+    cloud_publisher_.publish(extracted_cluster);
+
+
 
     int flag;
     if (not node_handle.getParam("/detector/cluster/flag", flag)) {
         flag = 1;
     }
 
-    
-    pcl::PointCloud<pcl::PointXYZRGB>::Ptr output_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
-    output_cloud->header = filtered_cloud->header;
+    /*         *indices = object_indices[i]; */
+    /*         extractor.setIndices(indices); */
+    /*         extractor.filter(*extracted_cluster); */
 
-    if (flag){
-        for (int i = 0; i < object_indices.size(); ++i) {
-            pcl::PointCloud<pcl::PointXYZRGB>::Ptr extracted_cluster(new pcl::PointCloud<pcl::PointXYZRGB>);
-            pcl::PointIndices::Ptr indices(new pcl::PointIndices);
-            *indices = object_indices[i];
-            extractor.setIndices(indices);
-            extractor.filter(*extracted_cluster);
-            int r = rand() % 255;
-            int g = rand() % 255;
-            int b = rand() % 255;
-            for (int j=0; j < extracted_cluster->points.size(); ++j) {
-                extracted_cluster->points[j].r = r;
-                extracted_cluster->points[j].g = g;
-                extracted_cluster->points[j].b = b;
-            }
-            *output_cloud += *extracted_cluster;
-            //cloud_publisher_.publish(extracted_cluster);
-        }
-    } else {
-        //cloud_publisher_.publish(filtered_cloud);
-    }
-    cloud_publisher_.publish(output_cloud);
+    /* pcl::PointCloud<pcl::PointXYZRGB>::Ptr output_cloud(new pcl::PointCloud<pcl::PointXYZRGB>); */
+    /* output_cloud->header = filtered_cloud->header; */
+
+    /* if (flag){ */
+    /*     for (int i = 0; i < object_indices.size(); ++i) { */
+    /*         pcl::PointCloud<pcl::PointXYZRGB>::Ptr extracted_cluster(new pcl::PointCloud<pcl::PointXYZRGB>); */
+    /*         pcl::PointIndices::Ptr indices(new pcl::PointIndices); */
+    /*         *indices = object_indices[i]; */
+    /*         extractor.setIndices(indices); */
+    /*         extractor.filter(*extracted_cluster); */
+    /*         int r = rand() % 255; */
+    /*         int g = rand() % 255; */
+    /*         int b = rand() % 255; */
+    /*         for (int j=0; j < extracted_cluster->points.size(); ++j) { */
+    /*             extracted_cluster->points[j].r = r; */
+    /*             extracted_cluster->points[j].g = g; */
+    /*             extracted_cluster->points[j].b = b; */
+    /*         } */
+    /*         *output_cloud += *extracted_cluster; */
+    /*         //cloud_publisher_.publish(extracted_cluster); */
+    /*     } */
+    /* } else { */
+    /*     //cloud_publisher_.publish(filtered_cloud); */
+    /* } */
+    /* cloud_publisher_.publish(output_cloud); */
 
 }
 
-void PositionEstimator::filter_out_ground(
-    pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud,
-    pcl::PointCloud<pcl::PointXYZRGB>::Ptr output_cloud
+bool PositionEstimator::remove_ground(
+    const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr& cloud,
+    boost::shared_ptr<vector<int> >& roi_indices,
+    boost::shared_ptr<vector<int> >& output_indices
     )
 {
+    geometry_msgs::TransformStamped transform;
+
+    try{
+        transform = tf_buffer.lookupTransform ("odom", cloud->header.frame_id, ros::Time(0));
+    }
+    catch(tf2::TransformException& ex) {
+        ROS_WARN("%s", ex.what());
+        return false;
+    }
+
     float ground_cutoff, ceiling_cutoff;
     if (not node_handle.getParam("/detector/ground_cutoff", ground_cutoff)) {
         ground_cutoff = 0.;
@@ -109,20 +123,33 @@ void PositionEstimator::filter_out_ground(
         ceiling_cutoff = 10.;
     }
 
-    pcl::PassThrough<pcl::PointXYZRGB> pass;
-    pass.setInputCloud (cloud);
-    pass.setFilterFieldName ("z");
-    pass.setFilterLimits (ground_cutoff, ceiling_cutoff);  
-    pass.filter (*output_cloud);
-    output_cloud->header = cloud->header;
+    geometry_msgs::Quaternion q = transform.transform.rotation;
+    Eigen::Quaternionf rotation (q.w ,q.x ,q.y ,q.z );
+    geometry_msgs::Vector3 v = transform.transform.translation;
+    Eigen::Translation<float, 3> translation (v.x, v.y, v.z);
+    Eigen::Transform<float, 3, Eigen::Affine> t (translation * rotation);
+    float z;
+    for (size_t i = 0; i < cloud->points.size (); ++i) {
+        if (isnan (cloud->points[i].x) ||
+            isnan (cloud->points[i].y) ||
+            isnan (cloud->points[i].z))
+        continue;
+
+        Eigen::Matrix<float, 3, 1> pt (cloud->points[i].x, cloud->points[i].y, cloud->points[i].z);
+        z = static_cast<float> (t (2, 0) * pt.coeffRef (0) + t (2, 1) * pt.coeffRef (1) + t (2, 2) * pt.coeffRef (2) + t (2, 3));
+        if (z > ground_cutoff && z < ceiling_cutoff) {
+            output_indices->push_back(i);
+        } 
+    }
+    return true;
 }
 
 void PositionEstimator::extract_region_of_interest(
     const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr& cloud,
     const object_detector::Detection& det,
-    pcl::PointIndices* indices
+    boost::shared_ptr<vector<int> >& roi_indices
     )
-{  
+{
     int x0, x1, y0, y1;
     int width = cloud->width;
     int height = cloud->height;
@@ -141,46 +168,25 @@ void PositionEstimator::extract_region_of_interest(
     x1 = (x1 >= width) ? width-1: x1;
     y0 = (y0 < 0) ? 0: y0;
     y1 = (y1 >= height) ? height-1: y1;
+
+
+    pcl::ExtractIndices<pcl::PointXYZRGB> extractor;
+    extractor.setInputCloud(cloud);
+    extractor.setIndices(y0, x0, y1-y0, x1-x0);
+
     for (int i = y0; i < y1; ++i) {
         for (int j = x0; j < x1; ++j) {
             int idx = i * cloud->width + j;
-            pcl::PointXYZRGB point;
-            point.x = cloud->points[idx].x;
-            point.y = cloud->points[idx].y;
-            point.z = cloud->points[idx].z;
-            point.r = 200;
-            point.b = 100;
-            point.g = 0;
-            output_cloud->points.push_back(point);
-        }
-    }
-    output_cloud->header = cloud->header;
-}
-
-
-void PositionEstimator::transform_to_global_frame(
-    pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud,
-    pcl::PointCloud<pcl::PointXYZRGB>::Ptr output_cloud
-    )
-{
-    while (true) {
-        try{
-            //tf_listener.waitForTransform("odom", "camera_depth_frame", ros::Time::now(), ros::Duration(0.1));
-            pcl_ros::transformPointCloud("odom", *cloud, *output_cloud, tf_listener);
-            //tf_listener.lookupTransform("odom", "lookUpTransform", ros::Time(), transform);
-            //pcl_ros::transformPointCloud(*cloud, *output_cloud, transform);
-            break;
-        }
-        catch(tf::ExtrapolationException& ex){   // have no idea why that's not working
-        //catch(...){
-            ROS_INFO("Caught an exception");
-            ros::Duration(0.01).sleep();
+            roi_indices->push_back(idx);
         }
     }
 }
+
+
 
 void PositionEstimator::get_clusters(
-    pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud,
+    const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr& cloud,
+    boost::shared_ptr<vector<int> >& input_indices
     std::vector<pcl::PointIndices>* object_indices
     )
 {
@@ -195,12 +201,12 @@ void PositionEstimator::get_clusters(
 
     pcl::EuclideanClusterExtraction<pcl::PointXYZRGB> euclid;
     euclid.setInputCloud(cloud);
-    //euclid.setIndices(above_surface_indices);
+    euclid.setIndices(*input_indices);
     euclid.setClusterTolerance(tolerance);
     euclid.setMinClusterSize(min_size);
     euclid.extract(*object_indices);
 }
-                
+
 
 
 
@@ -210,9 +216,9 @@ void PositionEstimator::get_clusters(
 
 tuple<geometry_msgs::PointStamped, float> PositionEstimator::estimate_position(
     const object_detector::Detection& det,
-    const sensor_msgs::LaserScan::ConstPtr& scan, 
+    const sensor_msgs::LaserScan::ConstPtr& scan,
     const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr& cloud,
-    int w_org, 
+    int w_org,
     int h_org)
 {
     // POINTCLOUD
@@ -249,7 +255,7 @@ tuple<geometry_msgs::PointStamped, float> PositionEstimator::estimate_position(
                 z = cloud->points[idx].z;
                 msg->points.push_back(pcl::PointXYZ(x, y, z));
             }
-        } 
+        }
         pcl_conversions::toPCL(ros::Time::now(), msg->header.stamp);
         cloud_publisher_.publish(msg);
     }
@@ -259,12 +265,12 @@ tuple<geometry_msgs::PointStamped, float> PositionEstimator::estimate_position(
         foo_point.header.frame_id = cloud->header.frame_id;
         foo_point.header.stamp = scan->header.stamp;
         foo_point.point.x = x;
-        foo_point.point.y = y; 
+        foo_point.point.y = y;
         foo_point.point.z = z;
         map_point = transform_point("map", foo_point);
         return make_tuple(map_point, 0.);
     }
-         
+
     // LIDAR
     float angle_min = scan->angle_min;
     float distance = std::numeric_limits<float>::infinity();
@@ -272,7 +278,7 @@ tuple<geometry_msgs::PointStamped, float> PositionEstimator::estimate_position(
 
     // TODO change the the way you compute start and angle of lidar analysis
     // get them from cloud
-    
+
     int n = scan->ranges.size();
     float shrinkage_ratio = (float)det.w / (float)w_org * (1. - shrinkage) / 2.;
     float first_ratio = (float)det.x0 / (float)w_org + shrinkage_ratio;
@@ -291,11 +297,11 @@ tuple<geometry_msgs::PointStamped, float> PositionEstimator::estimate_position(
 
         if (i < 0){
             active_idxs.push_back(i+n);
-            r = scan->ranges[i+n];  
+            r = scan->ranges[i+n];
             a = scan->angle_min + (scan->angle_increment * (i+n));
         } else {
             active_idxs.push_back(i);
-            r = scan->ranges[i];  
+            r = scan->ranges[i];
             a = scan->angle_min + (scan->angle_increment * i);
         }
 
@@ -304,15 +310,15 @@ tuple<geometry_msgs::PointStamped, float> PositionEstimator::estimate_position(
             angle = a;
         }
     }
-    
-    if (debug) {   
+
+    if (debug) {
         std::cout << "\nLaser minimal distance: " << distance << std::endl;
         std::cout << "Active points number: " << active_idxs.size() << std::endl;
         std::cout << "angle: " << angle << endl;
         std::cout << "Index from " << start_idx << " to " << end_idx << std::endl;
         std::cout << "\n\n";
         sensor_msgs::LaserScan::Ptr msg (new sensor_msgs::LaserScan);
-        msg->header.frame_id = "laser"; 
+        msg->header.frame_id = "laser";
         msg->header.stamp = scan->header.stamp;
         msg->angle_min = scan->angle_min;
         msg->angle_max = scan->angle_max;

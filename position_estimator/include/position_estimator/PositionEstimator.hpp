@@ -9,23 +9,33 @@
 #include <sensor_msgs/PointCloud2.h>
 #include <sensor_msgs/image_encodings.h>
 #include <geometry_msgs/PointStamped.h>
+#include <geometry_msgs/TransformStamped.h>
 #include <object_detector/DetectionBundle.h>
 #include <position_estimator/LocalizedDetection.h>
 
-#include <cv_bridge/cv_bridge.h>
-#include <opencv2/imgproc/imgproc.hpp>
-#include <opencv2/highgui/highgui.hpp>
-#include <image_transport/image_transport.h>
+/* #include <cv_bridge/cv_bridge.h> */
+/* #include <opencv2/imgproc/imgproc.hpp> */
+/* #include <opencv2/highgui/highgui.hpp> */
+/* #include <image_transport/image_transport.h> */
 
 #include <pcl/point_types.h>
 #include <pcl/segmentation/extract_clusters.h>
 #include <pcl/filters/passthrough.h>
 #include <pcl/filters/extract_indices.h>
 #include <pcl/PointIndices.h>
+
 #include <pcl_ros/point_cloud.h>
 #include <pcl_ros/transforms.h>
 
 #include <tf/transform_listener.h>
+#include <tf2/convert.h>
+
+#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+
+#include <tf2_ros/buffer_client.h>
+#include <tf2_ros/transform_listener.h>
+
+
 #include <ros/ros.h>
 #include <vector>
 #include <string>
@@ -47,18 +57,15 @@ class PositionEstimator {
             pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud,
             std::vector<pcl::PointIndices>* object_indices
         );
-        void transform_to_global_frame(
-            pcl::PointCloud<pcl::PointXYZRGB>::Ptr,
-            pcl::PointCloud<pcl::PointXYZRGB>::Ptr
-        );
         void extract_region_of_interest(
             const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr& cloud,
             const object_detector::Detection& det,
-            pcl::PointCloud<pcl::PointXYZRGB>::Ptr output_cloud
+            boost::shared_ptr<std::vector<int> >& indices
         );
-        void filter_out_ground(
-            pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud,
-            pcl::PointCloud<pcl::PointXYZRGB>::Ptr output_cloud
+        bool remove_ground(
+            const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr& cloud,
+            boost::shared_ptr<std::vector<int> >& input_indices,
+            boost::shared_ptr<std::vector<int> >& output_indices 
         );
         void filter_cloud(
             const object_detector::Detection& det,
@@ -87,6 +94,8 @@ class PositionEstimator {
         ros::Publisher laser_publisher_;
         ros::Publisher cloud_publisher_;
         tf::TransformListener tf_listener;
+        tf2_ros::Buffer tf_buffer;
+        tf2_ros::TransformListener tfListener;
         float shrinkage;
         bool debug;
 };
