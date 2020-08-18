@@ -20,9 +20,17 @@
 
 #include <pcl/point_types.h>
 #include <pcl/segmentation/extract_clusters.h>
+#include <pcl/segmentation/sac_segmentation.h>
 #include <pcl/filters/passthrough.h>
 #include <pcl/filters/extract_indices.h>
 #include <pcl/PointIndices.h>
+
+
+#include <pcl/ModelCoefficients.h>
+#include <pcl/io/pcd_io.h>
+#include <pcl/sample_consensus/method_types.h>
+#include <pcl/sample_consensus/model_types.h>
+
 
 #include <pcl_ros/point_cloud.h>
 #include <pcl_ros/transforms.h>
@@ -43,6 +51,7 @@
 #include <math.h>
 #include <time.h>
 
+using PointType = pcl::PointXYZRGB;
 
 class PositionEstimator {
     public:
@@ -50,49 +59,74 @@ class PositionEstimator {
 
         void callback(const sensor_msgs::LaserScan::ConstPtr& scan,
             const object_detector::DetectionBundle::ConstPtr& bundle_i,
-            const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr& cloud);
+            const pcl::PointCloud<PointType>::ConstPtr& cloud);
+
+        void callback2(const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr& cloud);
 
     private:
-        void get_clusters(
-            pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud,
-            std::vector<pcl::PointIndices>* object_indices
+        void remove_possible_walls(
+            const pcl::PointCloud<PointType>::ConstPtr& cloud,
+            boost::shared_ptr<std::vector<int> >& roi_indices,
+            boost::shared_ptr<std::vector<int> >& output_indices
         );
+ 
+        int choose_cluster (
+            const pcl::PointCloud<PointType>::ConstPtr& cloud,
+            std::vector<pcl::PointIndices>* object_indices,
+            const object_detector::Detection& det
+        );
+        void get_clusters(
+            const pcl::PointCloud<PointType>::ConstPtr& cloud,
+            boost::shared_ptr<std::vector<int> >& input_indices,
+            std::vector<pcl::PointIndices>* object_indices
+       );
         void extract_region_of_interest(
-            const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr& cloud,
+            const pcl::PointCloud<PointType>::ConstPtr& cloud,
             const object_detector::Detection& det,
             boost::shared_ptr<std::vector<int> >& indices
         );
         bool remove_ground(
-            const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr& cloud,
+            const pcl::PointCloud<PointType>::ConstPtr& cloud,
             boost::shared_ptr<std::vector<int> >& input_indices,
             boost::shared_ptr<std::vector<int> >& output_indices 
         );
         void filter_cloud(
             const object_detector::Detection& det,
-            const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr& cloud
+            const pcl::PointCloud<PointType>::ConstPtr& cloud
         );
+        void visualize_clusters(
+            const pcl::PointCloud<PointType>::ConstPtr& cloud,
+            std::vector<pcl::PointIndices> clusters_indices
+        );
+        bool is_it_nan_free(
+            const pcl::PointCloud<PointType>::ConstPtr& cloud,
+            boost::shared_ptr<std::vector<int> >& indices
+        );
+
         std::tuple<geometry_msgs::PointStamped, float> estimate_position(
             const object_detector::Detection& det,
             const sensor_msgs::LaserScan::ConstPtr& scan,
-            const pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr& cloud,
+            const pcl::PointCloud<PointType>::ConstPtr& cloud,
             int w_org, int h_org);
         geometry_msgs::PointStamped transform_point(
             std::string out_frame, 
             geometry_msgs::PointStamped point);
         message_filters::Subscriber<sensor_msgs::LaserScan> laser_sub_;
-        message_filters::Subscriber< pcl::PointCloud<pcl::PointXYZRGB> > cloud_sub_;
+        message_filters::Subscriber< pcl::PointCloud<PointType> > cloud_sub_;
         message_filters::Subscriber<object_detector::DetectionBundle> detect_sub_;
 
         typedef message_filters::sync_policies::ApproximateTime<
             sensor_msgs::LaserScan,
             object_detector::DetectionBundle,
-            pcl::PointCloud<pcl::PointXYZRGB>> MySyncPolicy;
+            pcl::PointCloud<PointType>> MySyncPolicy;
         typedef message_filters::Synchronizer<MySyncPolicy> Sync;
         boost::shared_ptr<Sync> sync_;
         ros::Publisher publisher_;
         ros::NodeHandle node_handle;
         ros::Publisher laser_publisher_;
         ros::Publisher cloud_publisher_;
+        ros::Publisher cloud_publisher2_;
+        ros::Subscriber subb;
         tf::TransformListener tf_listener;
         tf2_ros::Buffer tf_buffer;
         tf2_ros::TransformListener tfListener;
