@@ -69,7 +69,7 @@ class PositionEstimator {
             boost::shared_ptr<std::vector<int> >& roi_indices,
             boost::shared_ptr<std::vector<int> >& output_indices
         );
- 
+
         int choose_cluster (
             const pcl::PointCloud<PointType>::ConstPtr& cloud,
             std::vector<pcl::PointIndices>* object_indices,
@@ -88,7 +88,7 @@ class PositionEstimator {
         bool remove_ground(
             const pcl::PointCloud<PointType>::ConstPtr& cloud,
             boost::shared_ptr<std::vector<int> >& input_indices,
-            boost::shared_ptr<std::vector<int> >& output_indices 
+            boost::shared_ptr<std::vector<int> >& output_indices
         );
         void filter_cloud(
             const object_detector::Detection& det,
@@ -106,6 +106,33 @@ class PositionEstimator {
             const pcl::PointCloud<PointType>::ConstPtr& cloud,
             pcl::ModelCoefficients::Ptr coefficients
         );
+        bool are_outliers_between_plane_and_robot(
+            const pcl::PointCloud<PointType>::ConstPtr& cloud,
+            pcl::ModelCoefficients::Ptr coefficients,
+            boost::shared_ptr<std::vector<int> >& outliers
+        );
+
+        bool is_point_lying_in_space_between_plane_and_robot(
+            pcl::ModelCoefficients::Ptr coefficients,
+            PointType p
+        );
+
+        void visualize_sub_cloud(
+            const pcl::PointCloud<PointType>::ConstPtr& cloud,
+            boost::shared_ptr<std::vector<int> >& indices,
+            std::tuple<int,int,int> color
+        );
+
+        void visualize_sub_cloud(
+            const pcl::PointCloud<PointType>::ConstPtr& cloud,
+            pcl::PointIndices object_indices,
+            std::tuple<int,int,int> color
+        );
+
+
+        bool is_normal_vector_pointing_towards_space_in_between_plane_and_robot(
+            pcl::ModelCoefficients::Ptr coefficients
+        );
 
         std::tuple<geometry_msgs::PointStamped, float> estimate_position(
             const object_detector::Detection& det,
@@ -113,7 +140,7 @@ class PositionEstimator {
             const pcl::PointCloud<PointType>::ConstPtr& cloud,
             int w_org, int h_org);
         geometry_msgs::PointStamped transform_point(
-            std::string out_frame, 
+            std::string out_frame,
             geometry_msgs::PointStamped point);
         message_filters::Subscriber<sensor_msgs::LaserScan> laser_sub_;
         message_filters::Subscriber< pcl::PointCloud<PointType> > cloud_sub_;
@@ -126,10 +153,11 @@ class PositionEstimator {
         typedef message_filters::Synchronizer<MySyncPolicy> Sync;
         boost::shared_ptr<Sync> sync_;
         ros::Publisher publisher_;
+        ros::Publisher vis_pub;
         ros::NodeHandle node_handle;
         ros::Publisher laser_publisher_;
         ros::Publisher cloud_publisher_;
-        ros::Publisher cloud_publisher2_;
+        ros::Publisher rgb_cloud_publisher;
         ros::Subscriber subb;
         tf::TransformListener tf_listener;
         tf2_ros::Buffer tf_buffer;
