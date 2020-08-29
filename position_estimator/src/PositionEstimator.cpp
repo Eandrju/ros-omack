@@ -14,11 +14,16 @@ PositionEstimator::PositionEstimator(
     node_handle(node_handle), debug(debug), tfListener(tf_buffer)
 {
     // subscribers:
-    laser_sub_.subscribe(node_handle, "/scan", 1);
-    detect_sub_.subscribe(node_handle, "/detector/detection_bundle", 1);
-    cloud_sub_.subscribe(node_handle, "/camera/depth/points", 1);
+    std::string cloud_endpoint, laser_endpoint, detector_endpoint;
+    node_handle.param<std::string>("/cloud_endpoint", cloud_endpoint, "/camera/depth/points");
+    cloud_sub_.subscribe(node_handle, cloud_endpoint, 1);
+    node_handle.param<std::string>("/laser_endpoint", laser_endpoint, "/scan");
+    laser_sub_.subscribe(node_handle, laser_endpoint, 1);
+    node_handle.param<std::string>("/detector_endpoint", detector_endpoint, "/detector/detection_bundle");
+    detect_sub_.subscribe(node_handle, detector_endpoint, 1);
+    cout<<cloud_endpoint<<" "<<laser_endpoint<<" "<<detector_endpoint<<endl;
 
-    subb = node_handle.subscribe("/camera/depth/points", 1, &PositionEstimator::callback2, this);
+    subb = node_handle.subscribe(cloud_endpoint, 1, &PositionEstimator::callback2, this);
 
     // msg synchronization:
     sync_.reset(new Sync(MySyncPolicy(10), laser_sub_, detect_sub_, cloud_sub_));
@@ -46,24 +51,32 @@ void PositionEstimator::filter_cloud(
     const pcl::PointCloud<PointType>::ConstPtr& cloud
     )
 {
+    bool debug1;
+    if (not node_handle.getParam("/debug1", debug1)) {
+        debug1 = 1;
+    }
+ 
     cout << "========================" << endl;
     cout << "cloud size: " << cloud->size () << endl;
     // extract region surrounding detected object
     boost::shared_ptr<vector<int> > roi_indices (new vector<int>);
     extract_region_of_interest (cloud, det, roi_indices);
-    cout << "is roi output nan free: " << is_it_nan_free(cloud, roi_indices) << endl;
 
     cout << "roi cloud size: " << roi_indices->size () << endl;
     // discard points being part of ground or ceiling
     boost::shared_ptr<vector<int> > no_ground_indices (new vector<int>);
     if (not remove_ground (cloud, roi_indices, no_ground_indices)) return;
-    cout << "is no groud indices nan free: " << is_it_nan_free(cloud, no_ground_indices) << endl;
 
     cout << "ground excluded cloud size: " << no_ground_indices->size () << endl;
     // discard walls
     boost::shared_ptr<vector<int> > no_walls_indices (new vector<int>);
-    remove_possible_walls(cloud, no_ground_indices, no_walls_indices);
-    cout << "is no wall indices nan free: " << is_it_nan_free(cloud, no_walls_indices) << endl;
+    
+    if (debug1) {
+        remove_possible_walls(cloud, no_ground_indices, no_walls_indices);
+    }
+    else {
+        no_walls_indices = no_ground_indices;
+    }
 
     cout << "walls excluded cloud size: " << no_walls_indices->size () << endl;
     // using euclidean clusterization group points
@@ -120,9 +133,9 @@ void PositionEstimator::visualize_clusters(
         int g = rand() % 255;
         int b = rand() % 255;
         for (int j=0; j < extracted_cluster->points.size(); ++j) {
-            extracted_cluster->points[j].r = r;
-            extracted_cluster->points[j].g = g;
-            extracted_cluster->points[j].b = b;
+            /* extracted_cluster->points[j].r = r; */
+            /* extracted_cluster->points[j].g = g; */
+            /* extracted_cluster->points[j].b = b; */
         }
         *output_cloud += *extracted_cluster;
     }
@@ -215,22 +228,6 @@ void PositionEstimator::remove_possible_walls(
 }
 
 
-bool PositionEstimator::is_it_nan_free(
-    const pcl::PointCloud<PointType>::ConstPtr& cloud,
-    boost::shared_ptr<vector<int> >& indices
-    )
-{
-    for (int i = 0; i < indices->size (); ++i) {
-        int idx = (*indices)[i];
-        if (!isfinite (cloud->points[idx].x) ||
-            !isfinite (cloud->points[idx].y) ||
-            !isfinite (cloud->points[idx].z))
-            return false;
-    }
-    return true;
-}
- 
-    
 bool PositionEstimator::remove_ground(
     const pcl::PointCloud<PointType>::ConstPtr& cloud,
     boost::shared_ptr<vector<int> >& roi_indices,
@@ -356,9 +353,15 @@ void PositionEstimator::callback(
 {
     std::vector<object_detector::Detection> boxes_i = bundle_i->detections;
     for (int i = 0; i < bundle_i->size; ++i) {
+        std::string classname;
+        /* if (not node_handle.getParam("/debug1", classname)) { */
+        /*    classname = "pottedplant"; */
+        /* } */
+        /* if (boxes_i[i].class_name != classname) continue; */
         filter_cloud(boxes_i[i], cloud);
     }
 }
+
 
 
 void PositionEstimator::callback2(
@@ -373,8 +376,7 @@ void PositionEstimator::callback2(
         point.z = cloud->points[i].z;
         point.r = cloud->points[i].b;
         point.g = cloud->points[i].g;
-        //point.b = cloud->points[i].r;
-        point.b = cloud->points[i].g;
+        point.b = cloud->points[i].r;
         out->points.push_back(point);
     }
     cloud_publisher2_.publish(out);
