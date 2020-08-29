@@ -257,7 +257,7 @@ void PositionEstimator::remove_possible_walls(
     );
 
     visualize_sub_cloud(cloud, outliers, std::make_tuple(255, 0, 0));
-    visualize_sub_cloud(cloud, *inliers, std::make_tuple(255, 0, 0));
+    visualize_sub_cloud(cloud, *inliers, std::make_tuple(0, 255, 0));
 
 
     if (not are_outliers_between_plane_and_robot(cloud, coefficients, outliers)){
@@ -326,11 +326,14 @@ bool PositionEstimator::are_outliers_between_plane_and_robot(
             coefficients->values[i] *= -1;
     }
 
+    boost::shared_ptr<vector<int> > in_between_indices (new vector<int>);
     // count points lying in beetwen
     int points_in_between = 0;
     for (int i = 0; i < outliers->size(); ++i) {
-        if (is_point_lying_in_space_between_plane_and_robot(coefficients, cloud->points[i])) {
+        int idx = (*outliers)[i];
+        if (is_point_lying_in_space_between_plane_and_robot(coefficients, cloud->points[idx])) {
             points_in_between++;
+
         }
     }
 
@@ -430,7 +433,7 @@ bool PositionEstimator::remove_ground(
 
     float ground_cutoff, ceiling_cutoff;
     if (not node_handle.getParam("/detector/ground_cutoff", ground_cutoff)) {
-        ground_cutoff = 0.;
+        ground_cutoff = 0.05;
     }
     if (not node_handle.getParam("/detector/ceiling_cutoff", ceiling_cutoff)) {
         ceiling_cutoff = 10.;
@@ -471,7 +474,7 @@ void PositionEstimator::extract_region_of_interest(
     float shrinkage_ratio;
 
     if (not node_handle.getParam("/detector/shrinkage_ratio", shrinkage_ratio)) {
-        shrinkage_ratio = 1.;
+        shrinkage_ratio = 1.5;
     }
 
     x0 = (int)( det.x0 + (1. - shrinkage_ratio) / 2. * det.w );
@@ -506,7 +509,7 @@ void PositionEstimator::get_clusters(
 {
     float tolerance, min_size;
     if (not node_handle.getParam("/detector/cluster/tolerance", tolerance)) {
-        tolerance = 0.01;
+        tolerance = 0.05;
     }
 
     if (not node_handle.getParam("/detector/cluster/min_size", min_size)) {
@@ -538,8 +541,10 @@ void PositionEstimator::callback(
         /* } */
         /* if (boxes_i[i].class_name != classname) continue; */
         filter_cloud(boxes_i[i], cloud);
+        ros::Duration(1.).sleep();
     }
 }
+
 
 
 
