@@ -102,6 +102,10 @@ class PositionEstimator {
             const pcl::PointCloud<PointType>::ConstPtr& cloud,
             boost::shared_ptr<std::vector<int> >& indices
         );
+        bool is_plane_perpendicular_to_the_floor(
+            const pcl::PointCloud<PointType>::ConstPtr& cloud,
+            pcl::ModelCoefficients::Ptr coefficients
+        );
 
         std::tuple<geometry_msgs::PointStamped, float> estimate_position(
             const object_detector::Detection& det,

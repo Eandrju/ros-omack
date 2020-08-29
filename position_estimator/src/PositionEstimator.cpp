@@ -70,13 +70,7 @@ void PositionEstimator::filter_cloud(
     cout << "ground excluded cloud size: " << no_ground_indices->size () << endl;
     // discard walls
     boost::shared_ptr<vector<int> > no_walls_indices (new vector<int>);
-    
-    if (debug1) {
-        remove_possible_walls(cloud, no_ground_indices, no_walls_indices);
-    }
-    else {
-        no_walls_indices = no_ground_indices;
-    }
+    remove_possible_walls(cloud, no_ground_indices, no_walls_indices);
 
     cout << "walls excluded cloud size: " << no_walls_indices->size () << endl;
     // using euclidean clusterization group points
@@ -206,6 +200,15 @@ void PositionEstimator::remove_possible_walls(
     seg.setIndices(input_indices);
     seg.segment(*inliers, *coefficients);
 
+    // ensure it's fking wall 
+    if (not is_plane_perpendicular_to_the_floor(cloud, coefficients)){
+        output_indices = input_indices;
+        return;
+    }
+    
+    // make sure outliers lie in front of model 
+    
+
     // Remove wall indices from ROI
     int i = 0;
     for (int r = 0; r < input_indices->size(); ++r) {
@@ -226,6 +229,44 @@ void PositionEstimator::remove_possible_walls(
     cout << "Input size: " << input_indices->size() << " inliers size: " <<
         inliers->indices.size() << " removed : " << i << endl;
 }
+
+bool PositionEstimator::is_plane_perpendicular_to_the_floor(
+    const pcl::PointCloud<PointType>::ConstPtr& cloud,
+    pcl::ModelCoefficients::Ptr coefficients
+){
+    float x = coefficients->values[0];
+    float y = coefficients->values[1];
+    float z = coefficients->values[2];
+
+    geometry_msgs::TransformStamped transform;
+
+    try{
+        transform = tf_buffer.lookupTransform ("odom", cloud->header.frame_id, ros::Time(0));
+    }
+    catch(tf2::TransformException& ex) {
+        ROS_WARN("%s", ex.what());
+        return false;
+    }
+
+    geometry_msgs::Quaternion q = transform.transform.rotation;
+    Eigen::Quaternionf rotation (q.w ,q.x ,q.y ,q.z );
+    geometry_msgs::Vector3 v = transform.transform.translation;
+    Eigen::Translation<float, 3> translation (v.x, v.y, v.z);
+    Eigen::Transform<float, 3, Eigen::Affine> t (translation * rotation);
+
+    Eigen::Matrix<float, 3, 1> pt (x, y, z);
+
+    float z1 = static_cast<float> (t (2, 0) * pt.coeffRef (0) + t (2, 1) * pt.coeffRef (1) + t (2, 2) * pt.coeffRef (2) + t (2, 3));
+    float z0 = static_cast<float> (t (2, 3));
+
+    // if z coeff is close to zero in global frame then plane is perpendicular
+    cout << "Z coeff of transformed normal vector: "<<abs(z1-z0)<<endl;
+    if (abs(z1 - z0) < 0.1) 
+        return true;
+    else
+        return false;
+}
+
 
 
 bool PositionEstimator::remove_ground(
@@ -265,13 +306,6 @@ bool PositionEstimator::remove_ground(
         continue;
 
         Eigen::Matrix<float, 3, 1> pt (cloud->points[idx].x, cloud->points[idx].y, cloud->points[idx].z);
-        /* cout << cloud->points[idx].x << " should be " << pt.coeffRef(0) << endl << endl; */
-        /* /1* cout << "transform used: " << t(2, 0) << " " << t(2, 1) << " " << t(2, 2) << endl; *1/ */
-        /* cout << "rotation: " << q.w << " " << q.x << " " << q.y << " " << q.z << endl; */
-        /* cout << "translation: " << v.x << " " << v.y << " " << v.z << endl; */
-        /* cout << t(0, 0) << " " << t(0, 1) << " " << t(0, 2) << " " << t(0, 3) << endl; */
-        /* cout << t(1, 0) << " " << t(1, 1) << " " << t(1, 2) << " " << t(1, 3) << endl; */
-        /* cout << t(2, 0) << " " << t(2, 1) << " " << t(2, 2) << " " << t(2, 3) << endl; */
 
         float z = static_cast<float> (t (2, 0) * pt.coeffRef (0) + t (2, 1) * pt.coeffRef (1) + t (2, 2) * pt.coeffRef (2) + t (2, 3));
         if (z > ground_cutoff && z < ceiling_cutoff) {
