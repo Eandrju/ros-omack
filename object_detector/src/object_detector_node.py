@@ -16,7 +16,7 @@ class DetectorWrapper:
         self.debug = debug
         self.detector = Detector(
             conf_thresh=0.35,
-            resolution=320,
+            resolution=480,
         )
         self.bundle_pub = rospy.Publisher(
             '/detector/detection_bundle', DetectionBundle, queue_size=1
