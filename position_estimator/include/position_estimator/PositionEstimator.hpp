@@ -53,6 +53,13 @@
 
 using PointType = pcl::PointXYZRGB;
 
+struct BoundingBox {
+    int x0;
+    int x1;
+    int y0;
+    int y1;
+};
+
 class PositionEstimator {
     public:
         PositionEstimator(ros::NodeHandle&, bool);
@@ -134,6 +141,11 @@ class PositionEstimator {
             pcl::ModelCoefficients::Ptr coefficients
         );
 
+        float compute_IOU_metric(
+            BoundingBox box1,
+            BoundingBox box2
+        );
+
         std::tuple<geometry_msgs::PointStamped, float> estimate_position(
             const object_detector::Detection& det,
             const sensor_msgs::LaserScan::ConstPtr& scan,
@@ -158,6 +170,7 @@ class PositionEstimator {
         ros::Publisher laser_publisher_;
         ros::Publisher cloud_publisher_;
         ros::Publisher rgb_cloud_publisher;
+        ros::Publisher rgb_cloud_publisher2;
         ros::Subscriber subb;
         tf::TransformListener tf_listener;
         tf2_ros::Buffer tf_buffer;

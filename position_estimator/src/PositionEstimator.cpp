@@ -43,6 +43,8 @@ PositionEstimator::PositionEstimator(
                         "/position_estimator/points", 10);
         rgb_cloud_publisher = node_handle.advertise<pcl::PointCloud<pcl::PointXYZRGB>>(
                         "/position_estimator/points2", 10);
+        rgb_cloud_publisher2 = node_handle.advertise<pcl::PointCloud<pcl::PointXYZRGB>>(
+                        "/position_estimator/points3", 10);
     }
     ros::Duration(2).sleep();
 
@@ -67,20 +69,23 @@ void PositionEstimator::filter_cloud(
     // discard points being part of ground or ceiling
     boost::shared_ptr<vector<int> > no_ground_indices (new vector<int>);
     if (not remove_ground (cloud, roi_indices, no_ground_indices)) return;
+    if(no_ground_indices->size() == 0) return;
 
     cout << "ground excluded cloud size: " << no_ground_indices->size () << endl;
     // discard walls
     boost::shared_ptr<vector<int> > no_walls_indices (new vector<int>);
     remove_possible_walls(cloud, no_ground_indices, no_walls_indices);
+    if(no_walls_indices->size() == 0) return;
 
     cout << "walls excluded cloud size: " << no_walls_indices->size () << endl;
+    visualize_sub_cloud(cloud, no_walls_indices, std::make_tuple(0, 0, 255));
     // using euclidean clusterization group points
     std::vector<pcl::PointIndices> clusters_indices;
     get_clusters (cloud, no_walls_indices, &clusters_indices);
     if (clusters_indices.size () == 0) return;
 
     // visualize purpose
-    //visualize_clusters(cloud, clusters_indices);
+    visualize_clusters(cloud, clusters_indices);
 
     /* for (int i = 0; i < clusters_indices.size (); ++i){ */
     /*       pcl::PointCloud<PointType>::Ptr  extracted_cluster (new pcl::PointCloud<PointType>); */
@@ -94,6 +99,7 @@ void PositionEstimator::filter_cloud(
     cout << "number of clusters: " << clusters_indices.size () << endl;
     // choose cluster most likely to be part of detected object
     int cluster_idx = choose_cluster (cloud, &clusters_indices, det);
+    if (cluster_idx == -1) return;
 
     cout << "choosen object cloud size: " << clusters_indices[cluster_idx].indices.size () << endl;
     // extract choosen points and publish them
@@ -136,7 +142,7 @@ void PositionEstimator::visualize_clusters(
         *output_cloud += *extracted_cluster;
     }
 
-    rgb_cloud_publisher.publish(output_cloud);
+    rgb_cloud_publisher2.publish(output_cloud);
 }
 
 void PositionEstimator::visualize_sub_cloud(
@@ -177,10 +183,34 @@ void PositionEstimator::visualize_sub_cloud(
     rgb_cloud_publisher.publish(output_cloud);
 }
 
+float PositionEstimator::compute_IOU_metric(
+        BoundingBox box1,
+        BoundingBox box2
+    )
+{
+    int overlap_x0 , overlap_y0, overlap_x1, overlap_y1;
+    int union_x0, union_y0, union_x1, union_y1;
+
+    overlap_x0 = std::max(box1.x0, box2.x0);
+    overlap_x1 = std::min(box1.x1, box2.x1);
+    overlap_y0 = std::max(box1.y0, box2.y0);
+    overlap_y1 = std::min(box1.y1, box2.y1);
+
+    union_x0 = std::min(box1.x0, box2.x0);
+    union_x1 = std::max(box1.x1, box2.x1);
+    union_y0 = std::min(box1.y0, box2.y0);
+    union_y1 = std::max(box1.y1, box2.y1);
+
+    float union_area = (union_x1 - union_x0) * (union_y1 - union_y0);
+    float overlap_area = (overlap_x1 - overlap_x0) * (overlap_y1 - overlap_y0);
+    float roi = overlap_area / union_area;
+    return roi;
+
+}
 
 int PositionEstimator::choose_cluster (
     const pcl::PointCloud<PointType>::ConstPtr& cloud,
-    std::vector<pcl::PointIndices>* objects_indices,
+    std::vector<pcl::PointIndices>* clusters,
     const object_detector::Detection& det
     )
 
@@ -189,34 +219,50 @@ int PositionEstimator::choose_cluster (
     int height = cloud->height;
     int best_cluster_idx;
     int y_min, y_max, x_min, x_max, x_idx, y_idx;
-    float minimal_error = std::numeric_limits<float>::infinity();
-    float error;
+    float best_iou = 0.;
+    float iou;
 
-    for (int i = 0; i < objects_indices->size(); ++i) {
-        /* pcl::PointIndices obj_indices = (*objects_indices)[i]; */
+    for (int i = 0; i < clusters->size(); ++i) {
+        /* pcl::PointIndices obj_indices = (*clusters)[i]; */
         y_min= height;
         y_max= 0;
         x_min= width;
         x_max= 0;
 
-        for (int j = 0; j < (*objects_indices)[i].indices.size(); ++j) {
-            y_idx = (*objects_indices)[i].indices[j] / width;
-            x_idx = (*objects_indices)[i].indices[j] % width;
+        for (int j = 0; j < (*clusters)[i].indices.size(); ++j) {
+            y_idx = (*clusters)[i].indices[j] / width;
+            x_idx = (*clusters)[i].indices[j] % width;
 
             y_min = (y_idx < y_min) ? y_idx: y_min;
             y_max = (y_idx > y_max) ? y_idx: y_max;
             x_min = (x_idx < x_min) ? x_idx: x_min;
             x_max = (x_idx > x_max) ? x_idx: x_max;
+        }
 
-            error = (det.w - (x_max - x_min)) * (det.w - (x_max - x_min)) +
-                (det.h - (y_max - y_min)) * (det.h - (y_max - y_min));
-            if (error < minimal_error) {
-                minimal_error = error;
-                best_cluster_idx = i;
-            }
+        BoundingBox cluster_rect = {x_min, x_max, y_min, y_max};
+        BoundingBox detection_rect = {
+            static_cast<int>(det.x0),
+            static_cast<int>(det.x0 + det.w),
+            static_cast<int>(det.y0),
+            static_cast<int>(det.y0 + det.h)
+        };
+
+        iou = compute_IOU_metric(cluster_rect, detection_rect);
+
+        if (iou > best_iou) {
+            best_iou = iou;
+            best_cluster_idx = i;
         }
     }
-    return best_cluster_idx;
+    cout << "Best IOU metric: "<< best_iou << endl;
+
+    float iou_threshold;
+    node_handle.param<float>("/iou_threshold", iou_threshold, 0.8);
+
+    if (best_iou >= iou_threshold)
+        return best_cluster_idx;
+    else
+        return -1;
 }
 
 
@@ -336,6 +382,29 @@ bool PositionEstimator::are_outliers_between_plane_and_robot(
 
         }
     }
+    visualization_msgs::Marker marker;
+    marker.header.frame_id = cloud->header.frame_id;
+    marker.header.stamp = ros::Time();
+    marker.ns = "my_namespace";
+    marker.id = 0;
+    marker.type = visualization_msgs::Marker::ARROW;
+    marker.action = visualization_msgs::Marker::ADD;
+    marker.scale.x = 0.1;
+    marker.scale.y = 0.1;
+    marker.scale.z = 0.1;
+    marker.color.a = 1.0; // Don't forget to set the alpha!
+    marker.color.r = 1.0;
+    marker.color.g = 0.0;
+    marker.color.b = 0.0;
+    geometry_msgs::Point p0, p1;
+    p0.x = 0; p0.y = 0; p0.z = 0;
+    marker.points.push_back(p0);
+    p1.x = coefficients->values[0];
+    p1.y = coefficients->values[1];
+    p1.z = coefficients->values[2];
+    marker.points.push_back(p1);
+    vis_pub.publish( marker );
+    return true;
 
     cout << "Percentage of points in between: " << static_cast<float>(points_in_between) / outliers->size() << endl;
     // check if plane is in fact wall <==> most of points lies in between
@@ -344,36 +413,7 @@ bool PositionEstimator::are_outliers_between_plane_and_robot(
     else
         return false;
 
-    /* visualization_msgs::Marker marker; */
-    /* marker.header.frame_id = cloud->header.frame_id; */
-    /* marker.header.stamp = ros::Time(); */
-    /* marker.ns = "my_namespace"; */
-    /* marker.id = 0; */
-    /* marker.type = visualization_msgs::Marker::ARROW; */
-    /* marker.action = visualization_msgs::Marker::ADD; */
-    /* marker.scale.x = 0.1; */
-    /* marker.scale.y = 0.1; */
-    /* marker.scale.z = 0.1; */
-    /* marker.color.a = 1.0; // Don't forget to set the alpha! */
-    /* if (true){ */
-    /*     marker.color.r = 1.0; */
-    /*     marker.color.g = 0.0; */
-    /* } */
-    /* else { */
-    /*     marker.color.r = 0.0; */
-    /*     marker.color.g = 1.0; */
-    /* } */
-    /* marker.color.b = 0.0; */
-    /* geometry_msgs::Point p0, p1; */
-    /* p0.x = 0; p0.y = 0; p0.z = 0; */
-    /* marker.points.push_back(p0); */
-    /* p1.x = coefficients->values[0]; */
-    /* p1.y = coefficients->values[1]; */
-    /* p1.z = coefficients->values[2]; */
-    /* marker.points.push_back(p1); */
-    /* vis_pub.publish( marker ); */
-    /* return true; */
-}
+    }
 
 
 bool PositionEstimator::is_plane_perpendicular_to_the_floor(
@@ -535,13 +575,14 @@ void PositionEstimator::callback(
     for (int i = 0; i < bundle_i->size; ++i) {
         std::string classname;
         cout << "========================" << endl;
+        cout << "Cloud height and width: " << cloud->height <<"x"<<cloud->width<<endl;
         cout << "Detected object: " << boxes_i[i].class_name << endl;
         /* if (not node_handle.getParam("/debug1", classname)) { */
         /*    classname = "pottedplant"; */
         /* } */
         /* if (boxes_i[i].class_name != classname) continue; */
         filter_cloud(boxes_i[i], cloud);
-        ros::Duration(1.).sleep();
+        /* ros::Duration(1.).sleep(); */
     }
 }
 
