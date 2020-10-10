@@ -142,6 +142,10 @@ class DetectorWrapper:
             if debug_class_filter and d.class_name != debug_class_filter:
                 continue
 
+            ignored_class = rospy.get_param('/debug_ignore_class', 'human')
+            if d.class_name == ignored_class:
+                continue
+
             color = self.detector.colors[int(box[-1])]
             d.color.r = int(color[0])
             d.color.g = int(color[1])

@@ -12,7 +12,7 @@
         <param name="vertical_offset" value="13"/>
     </node>
 
-    <!-- unzip image from robot and republish it locally -->
+    <!-- unzip image from robot and republish it locally-->
     <node pkg="image_transport" 
         type="republish" 
         name="depth_decompress" 
@@ -24,7 +24,7 @@
     <node pkg="nodelet" type="nodelet" args="manager"
                  name="record_player_manager" output="screen"/>
 
-    <!-- recreated point cloud out of rgb and depth image locally -->
+             <!-- recreated point cloud out of rgb and depth image locally -->
     <node pkg="nodelet" type="nodelet" name="cloudify"
         args="load depth_image_proc/point_cloud_xyzrgb record_player_manager --no-bond">
         <remap from="depth_registered/image_rect" to="depth_raw"/>
@@ -57,6 +57,8 @@
         <param name="/image_input" value="/image_shifted"/>
         <param name="/image_input_compressed" value="/image_shifted/compressed"/>
         <param name="/cloud_input" value="/genereted_on_pc/points"/>
+        <param name="/camera/driver/data_skip" value="5"/>
+        <param name="/iou_threshold" value="0.6"/>
     </group>
 
 </launch>

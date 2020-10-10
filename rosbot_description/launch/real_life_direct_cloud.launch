@@ -1,0 +1,63 @@
+<?xml version='1.0'?>
+<launch>
+    <!--<arg name="cloud_input" value="/generated_on_pc/points"/>-->
+    <arg name="cloud_input" value="/camera/depth/points"/>
+    <arg name="image_input" value="/image_shifted"/>
+    <arg name="image_input_compressed" value="/image_shifted/compressed"/>
+
+    <!-- shift that bloody image to fix alignment -->
+    <node pkg="image_shifter" type="image_shifter.py" name="image_shifter">
+        <param name="input" value="/camera/rgb/image_rect_color/compressed"/>
+        <param name="output" value="/image_shifted"/>
+        <param name="horizontal_offset" value="-10"/>
+        <param name="vertical_offset" value="13"/>
+    </node>
+
+    <!-- unzip image from robot and republish it locally 
+    <node pkg="image_transport" 
+        type="republish" 
+        name="depth_decompress" 
+        args=" compressed in:=/camera/depth_registered/sw_registered/image_rect_raw
+               raw out:=/depth_raw">
+    </node>-->
+
+
+    <node pkg="nodelet" type="nodelet" args="manager"
+                 name="record_player_manager" output="screen"/>
+
+    <!-- recreated point cloud out of rgb and depth image locally 
+    <node pkg="nodelet" type="nodelet" name="cloudify"
+        args="load depth_image_proc/point_cloud_xyzrgb record_player_manager -no-bond">
+        <remap from="depth_registered/image_rect" to="depth_raw"/>
+        <remap from="depth_registered/points" to="generated_on_pc/points"/>
+        <remap from="rgb/image_rect_color" to="image_shifted"/>
+    	<remap from="rgb/camera_info" to="camera/rgb/camera_info"/>
+    </node>-->
+
+    <node pkg="detection_visualizer" type="detection_visualizer.py" name="detection_visualizer">
+        <param name="/image_input" value="$(arg image_input_compressed)"/>
+    </node>
+
+    <node pkg="object_detector" type="object_detector_node.py" name="object_detector">
+        <param name="/image_input" value="$(arg image_input_compressed)"/>
+    </node>
+
+    <node pkg="gmapping" type="slam_gmapping" name="slam_mapping" args="scan:=scan"/>
+
+    <node pkg="position_estimator" type="position_estimator" name="cluster_extractor" output="screen">
+        <param name="/cloud_input" value="$(arg cloud_input)"/>
+        <param name="/ground_cutoff" value="0.02"/>
+    </node>
+
+
+    <node pkg="semantic_mapper" type="semantic_mapper.py" name="semantic_mapper"/>
+
+    <node name="rviz" pkg="rviz" type="rviz" required="true" args="-d $(find rosbot_description)/rviz/real_life.rviz"/>
+
+    <group>
+        <param name="/image_input" value="/image_shifted"/>
+        <param name="/image_input_compressed" value="/image_shifted/compressed"/>
+        <param name="/cloud_input" value="/genereted_on_pc/points"/>
+    </group>
+
+</launch>

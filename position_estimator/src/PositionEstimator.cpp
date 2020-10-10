@@ -163,6 +163,8 @@ void PositionEstimator::map_cloud_to_ground(
     pcl::PointCloud<PointType>::Ptr  downsampled(new pcl::PointCloud<pcl::PointXYZRGB>);
     voxel_grid.filter(*downsampled);
   
+    //ros::Time t = ros::Time(0);
+    //pcl_ros::transformPointCloud("/map", t, *downsampled, "/camera_rgb_optical_frame", *mapped_cluster, tf_listener_v1);
     pcl_ros::transformPointCloud("/map", *downsampled, *mapped_cluster, tf_listener_v1);
     for (int j=0; j < mapped_cluster->points.size(); ++j) {
             mapped_cluster->points[j].z = 0.01;
@@ -271,6 +273,8 @@ float PositionEstimator::compute_IOU_metric(
 {
     int overlap_x0 , overlap_y0, overlap_x1, overlap_y1;
     int union_x0, union_y0, union_x1, union_y1;
+    cout << "cluster rect x0: " << box1.x0 << " y0: " << box1.y0 << " w: " << box1.x1-box1.x0 << " h: " << box1.y1-box1.y0 << endl;
+    cout << "dtecion rect x0: " << box2.x0 << " y0: " << box2.y0 << " w: " << box2.x1-box2.x0 << " h: " << box2.y1-box2.y0 << endl;
 
     overlap_x0 = std::max(box1.x0, box2.x0);
     overlap_x1 = std::min(box1.x1, box2.x1);
