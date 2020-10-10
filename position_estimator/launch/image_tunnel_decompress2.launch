@@ -1,0 +1,32 @@
+<?xml version='1.0'?>
+<launch>
+
+    <node pkg="image_transport" 
+        type="republish" 
+        name="depth_decompress" 
+        args=" compressed in:=/camera/depth_registered/sw_registered/image_rect_raw
+               raw out:=/depth_raw">
+            <param name="compressed/mode" value="unchanged"/>
+            <param name="compressed/format" value="png"/>
+            <param name="compressed/png_level" value="1"/>
+    </node>
+
+     <node pkg="nodelet" type="nodelet" args="manager"
+                 name="record_player_manager" output="screen"/>
+
+<!--     <node pkg="nodelet" type="nodelet" name="metric_rect" --> 
+<!--         args="load depth_image_proc/convert_metric record_player_manager -no-bond"> -->
+<!--         <remap from="image_raw" to="depth_raw"/> -->
+<!--         <remap from="image" to="depth_metric"/> -->
+<!--     </node> -->
+ 
+
+
+    <node pkg="nodelet" type="nodelet" name="cloudify"
+        args="load depth_image_proc/point_cloud_xyz record_player_manager --no-bond">
+        <remap from="image_rect" to="depth_raw"/>
+        <remap from="points" to="depth_shit/points"/>
+        <remap from="camera_info" to="camera/depth_registered/sw_registered/camera_info"/>
+    </node>
+
+</launch>

@@ -5,13 +5,13 @@
 #include <message_filters/sync_policies/approximate_time.h>
 #include "visualization_msgs/Marker.h"
 #include <sensor_msgs/Image.h>
-#include <sensor_msgs/LaserScan.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <sensor_msgs/image_encodings.h>
 #include <geometry_msgs/PointStamped.h>
 #include <geometry_msgs/TransformStamped.h>
 #include <object_detector/DetectionBundle.h>
-#include <position_estimator/LocalizedDetection.h>
+#include <position_estimator/LabeledCluster.h>
+
 
 /* #include <cv_bridge/cv_bridge.h> */
 /* #include <opencv2/imgproc/imgproc.hpp> */
@@ -22,6 +22,7 @@
 #include <pcl/segmentation/extract_clusters.h>
 #include <pcl/segmentation/sac_segmentation.h>
 #include <pcl/filters/passthrough.h>
+#include <pcl/filters/voxel_grid.h>
 #include <pcl/filters/extract_indices.h>
 #include <pcl/PointIndices.h>
 
@@ -34,6 +35,8 @@
 
 #include <pcl_ros/point_cloud.h>
 #include <pcl_ros/transforms.h>
+
+#include <pcl_conversions/pcl_conversions.h>
 
 #include <tf/transform_listener.h>
 #include <tf2/convert.h>
@@ -64,7 +67,7 @@ class PositionEstimator {
     public:
         PositionEstimator(ros::NodeHandle&, bool);
 
-        void callback(const sensor_msgs::LaserScan::ConstPtr& scan,
+        void callback(
             const object_detector::DetectionBundle::ConstPtr& bundle_i,
             const pcl::PointCloud<PointType>::ConstPtr& cloud);
 
@@ -82,6 +85,11 @@ class PositionEstimator {
             std::vector<pcl::PointIndices>* object_indices,
             const object_detector::Detection& det
         );
+        void map_cloud_to_ground(
+            const pcl::PointCloud<PointType>::ConstPtr& extracted_cluster,
+            pcl::PointCloud<PointType>::Ptr& ouput
+        );
+
         void get_clusters(
             const pcl::PointCloud<PointType>::ConstPtr& cloud,
             boost::shared_ptr<std::vector<int> >& input_indices,
@@ -97,9 +105,16 @@ class PositionEstimator {
             boost::shared_ptr<std::vector<int> >& input_indices,
             boost::shared_ptr<std::vector<int> >& output_indices
         );
+
+        void remove_nans(
+            const pcl::PointCloud<PointType>::ConstPtr& cloud,
+            boost::shared_ptr<std::vector<int> >& input_indices,
+            boost::shared_ptr<std::vector<int> >& output_indices
+        );
         void filter_cloud(
             const object_detector::Detection& det,
-            const pcl::PointCloud<PointType>::ConstPtr& cloud
+            const pcl::PointCloud<PointType>::ConstPtr& cloud,
+            pcl::PointCloud<PointType>::Ptr& extracted_cluster
         );
         void visualize_clusters(
             const pcl::PointCloud<PointType>::ConstPtr& cloud,
@@ -127,13 +142,20 @@ class PositionEstimator {
         void visualize_sub_cloud(
             const pcl::PointCloud<PointType>::ConstPtr& cloud,
             boost::shared_ptr<std::vector<int> >& indices,
-            std::tuple<int,int,int> color
+            std::tuple<int,int,int> color,
+            int k
         );
 
         void visualize_sub_cloud(
             const pcl::PointCloud<PointType>::ConstPtr& cloud,
             pcl::PointIndices object_indices,
-            std::tuple<int,int,int> color
+            std::tuple<int,int,int> color,
+            int k
+        );
+        void downsample(
+            const pcl::PointCloud<PointType>::ConstPtr& cloud,
+            boost::shared_ptr<std::vector<int> >& input_indices,
+            boost::shared_ptr<std::vector<int> >& output_indices
         );
 
 
@@ -146,20 +168,13 @@ class PositionEstimator {
             BoundingBox box2
         );
 
-        std::tuple<geometry_msgs::PointStamped, float> estimate_position(
-            const object_detector::Detection& det,
-            const sensor_msgs::LaserScan::ConstPtr& scan,
-            const pcl::PointCloud<PointType>::ConstPtr& cloud,
-            int w_org, int h_org);
         geometry_msgs::PointStamped transform_point(
             std::string out_frame,
             geometry_msgs::PointStamped point);
-        message_filters::Subscriber<sensor_msgs::LaserScan> laser_sub_;
         message_filters::Subscriber< pcl::PointCloud<PointType> > cloud_sub_;
         message_filters::Subscriber<object_detector::DetectionBundle> detect_sub_;
 
         typedef message_filters::sync_policies::ApproximateTime<
-            sensor_msgs::LaserScan,
             object_detector::DetectionBundle,
             pcl::PointCloud<PointType>> MySyncPolicy;
         typedef message_filters::Synchronizer<MySyncPolicy> Sync;
@@ -167,12 +182,15 @@ class PositionEstimator {
         ros::Publisher publisher_;
         ros::Publisher vis_pub;
         ros::NodeHandle node_handle;
-        ros::Publisher laser_publisher_;
         ros::Publisher cloud_publisher_;
         ros::Publisher rgb_cloud_publisher;
         ros::Publisher rgb_cloud_publisher2;
+        ros::Publisher rgb_cloud_publisher3;
+        ros::Publisher rgb_cloud_publisher4;
+        ros::Publisher rgb_cloud_publisher5;
+        ros::Publisher rgb_cloud_publisher6;
         ros::Subscriber subb;
-        tf::TransformListener tf_listener;
+        tf::TransformListener tf_listener_v1;
         tf2_ros::Buffer tf_buffer;
         tf2_ros::TransformListener tfListener;
         float shrinkage;

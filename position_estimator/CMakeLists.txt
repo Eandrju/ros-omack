@@ -17,12 +17,12 @@ find_package( PCL REQUIRED )
 
 add_message_files(
     FILES
-    LocalizedDetection.msg
+    LabeledCluster.msg
 )
 
 generate_messages(
     DEPENDENCIES
-    geometry_msgs
+    sensor_msgs
 )
 
 catkin_package(

@@ -1,0 +1,36 @@
+<?xml version='1.0'?>
+<launch>
+    <node pkg="image_shifter" type="image_shifter.py" name="image_shifter">
+        <param name="input" value="/camera/rgb/image_rect_color/compressed"/>
+        <param name="output" value="/image_shifted"/>
+        <param name="horizontal_offset" value="-10"/>
+        <param name="vertical_offset" value="13"/>
+    </node>
+
+    <node pkg="image_transport" 
+        type="republish" 
+        name="depth_decompress" 
+        args=" compressed in:=/camera/depth_registered/sw_registered/image_rect_raw
+               raw out:=/depth_raw">
+    </node>
+
+
+     <node pkg="nodelet" type="nodelet" args="manager"
+                 name="record_player_manager" output="screen"/>
+
+
+    <node pkg="nodelet" type="nodelet" name="cloudify"
+        args="load depth_image_proc/point_cloud_xyzrgb record_player_manager --no-bond">
+        <!-- <node pkg="depth_image_proc" type="point_cloud_xyzrgb" name="cloudify"> -->
+        <remap from="depth_registered/image_rect" to="depth_raw"/>
+        <remap from="depth_registered/points" to="generated_on_pc/points"/>
+        <remap from="rgb/image_rect_color" to="image_shifted"/>
+    	<remap from="rgb/camera_info" to="camera/rgb/camera_info"/>
+    </node>
+
+    <group>
+        <param name="/image_input" value="/image_shifted"/>
+        <param name="/image_input_compressed" value="/image_shifted/compressed"/>
+    </group>
+
+</launch>

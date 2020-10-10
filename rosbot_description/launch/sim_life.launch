@@ -1,0 +1,27 @@
+<?xml version='1.0'?>
+<launch>
+    <arg name="cloud_input" value="/camera/depth/points"/>
+    <arg name="image_input_compressed" value="/camera/rgb/image_raw/compressed"/>
+
+    <node pkg="detection_visualizer" type="detection_visualizer.py" name="detection_visualizer">
+        <param name="/image_input" value="$(arg image_input_compressed)"/>
+    </node>
+
+    <node pkg="object_detector" type="object_detector_node.py" name="object_detector">
+        <param name="/image_input" value="$(arg image_input_compressed)"/>
+        <param name="/cycle_lag" value="0.2"/>
+    </node>
+
+    <node pkg="position_estimator" type="position_estimator" name="cluster_extractor" output="screen">
+        <param name="/cloud_input" value="$(arg cloud_input)"/>
+        <param name="/ground_cutoff" value="0.02"/>
+    </node>
+
+    <node pkg="gmapping" type="slam_gmapping" name="slam_mapping" args="scan:=scan"/>
+
+    <node pkg="semantic_mapper" type="semantic_mapper.py" name="semantic_mapper"/>
+
+    <node name="rviz" pkg="rviz" type="rviz" required="true" args="-d $(find rosbot_description)/rviz/sim_life.rviz"/>
+
+
+</launch>

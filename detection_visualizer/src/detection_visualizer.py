@@ -9,7 +9,12 @@ from object_detector.msg import Detection
 
 class VisualizerWrapper:
     def __init__(self):
-        self.image_sub = mf.Subscriber("/camera/rgb/image_raw/compressed", CompressedImage)
+
+        image_input = rospy.get_param(
+            '/detection_visualizer/image_input',
+            '/camera/rgb/image_rect_color/compressed'
+        )
+        self.image_sub = mf.Subscriber(image_input, CompressedImage)
         self.bundle_sub = mf.Subscriber("/detector/detection_bundle", DetectionBundle)
 
         self.ts = mf.TimeSynchronizer([self.image_sub, self.bundle_sub], 20)
@@ -22,7 +27,7 @@ class VisualizerWrapper:
         self.labels = open(os.path.join(path, 'data', 'coco.names')).read().split('\n')[:-1]
         self.colors = np.random.randint(0, 255, size=(len(self.labels), 3), dtype='uint8').tolist()
         self.font = cv2.FONT_HERSHEY_SIMPLEX
-        self.fontScale = 0.35
+        self.fontScale = 0.6
         self.fontSize = 1
         self.rectThickness = 2
 
