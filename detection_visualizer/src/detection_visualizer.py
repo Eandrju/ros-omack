@@ -44,6 +44,18 @@ class VisualizerWrapper:
             end = d.x0 + d.w, d.y0 + d.h
             color = (d.color.r, d.color.g, d.color.b)
             label = d.class_name
+            if label == 'pottedplant':
+                color = (47, 181, 65)
+            elif label == 'chair':
+                color = (33, 137, 196)
+            elif label == 'backpack':
+                color = (214, 43, 94)
+            elif label == 'laptop':
+                color = (35, 14, 227)
+            elif label == 'cup':
+                color = (0, 149, 255)
+            elif label == 'bottle':
+                color = (0,0,0)
             image = cv2.rectangle(image, start, end, color, self.rectThickness)
             x = self.rectThickness
             # label rectangle and text

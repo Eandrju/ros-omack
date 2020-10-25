@@ -43,12 +43,14 @@
 
     <node pkg="gmapping" type="slam_gmapping" name="slam_mapping" args="scan:=scan"/>
 
+    <!-- <node pkg="position_estimator" type="position_estimator" name="cluster_extractor"> -->
     <node pkg="position_estimator" type="position_estimator" name="cluster_extractor" output="screen">
         <param name="/cloud_input" value="$(arg cloud_input)"/>
         <param name="/ground_cutoff" value="0.02"/>
     </node>
 
 
+    <!-- <node pkg="semantic_mapper" type="semantic_mapper.py" name="semantic_mapper" output="screen"/> -->
     <node pkg="semantic_mapper" type="semantic_mapper.py" name="semantic_mapper"/>
 
     <node name="rviz" pkg="rviz" type="rviz" required="true" args="-d $(find rosbot_description)/rviz/real_life.rviz"/>

@@ -3,9 +3,8 @@ Panels:
     Help Height: 78
     Name: Displays
     Property Tree Widget:
-      Expanded:
-        - /SemanticMapper1
-      Splitter Ratio: 0.5040650367736816
+      Expanded: ~
+      Splitter Ratio: 0.5411764979362488
     Tree Height: 364
   - Class: rviz/Selection
     Name: Selection
@@ -206,7 +205,7 @@ Visualization Manager:
       Queue Size: 10
       Selectable: true
       Size (Pixels): 3
-      Size (m): 0.10000000149011612
+      Size (m): 0.05000000074505806
       Style: Flat Squares
       Topic: /semantic_mapper/points
       Unreliable: false
@@ -238,7 +237,7 @@ Visualization Manager:
       Size (Pixels): 3
       Size (m): 0.009999999776482582
       Style: Flat Squares
-      Topic: /camera/depth/points
+      Topic: /generated_on_pc/points
       Unreliable: false
       Use Fixed Frame: true
       Use rainbow: true
@@ -481,25 +480,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 13.718502044677734
+      Distance: 2.522355794906616
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 1.7055431604385376
-        Y: 0.7108985185623169
-        Z: 4.234723746776581e-5
+        X: 1.638630747795105
+        Y: 0.3387381136417389
+        Z: 0.35770106315612793
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.4752034842967987
+      Pitch: 1.484796404838562
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 4.287632465362549
+      Yaw: 3.0826308727264404
     Saved: ~
 Window Geometry:
   DetectionVisualization:

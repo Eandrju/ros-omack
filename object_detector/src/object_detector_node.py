@@ -6,9 +6,6 @@ from sensor_msgs.msg import CompressedImage
 from object_detector.msg import DetectionBundle
 from object_detector.msg import Detection
 from gpu_yolo.gpu_yolo import Detector
-#from ssd.ssd import Detector
-#from yolo.yolo import Detector
-#from frcnn.frcnn import Detector
 
 name_to_dtypes = {
         "rgb8":    (np.uint8,  3),
@@ -84,7 +81,7 @@ class DetectorWrapper:
         self.last_callback = None
         self.debug = debug
         self.detector = Detector(
-            conf_thresh=0.65,
+            conf_thresh=0.8,
             resolution=480,
         )
         self.bundle_pub = rospy.Publisher(
@@ -142,8 +139,9 @@ class DetectorWrapper:
             if debug_class_filter and d.class_name != debug_class_filter:
                 continue
 
-            ignored_class = rospy.get_param('/debug_ignore_class', 'human')
-            if d.class_name == ignored_class:
+
+            ignored_classes = ('person', 'dog', 'mobile_phone')
+            if d.class_name in ignored_classes:
                 continue
 
             color = self.detector.colors[int(box[-1])]

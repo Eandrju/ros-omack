@@ -105,7 +105,7 @@ void PositionEstimator::filter_cloud(
         remove_possible_walls(cloud, input_indices, output_indices);
         cout << "walls excluded cloud size: " << output_indices->size () << endl;
         if(output_indices->size() < cloud_min_size) return;
-//        visualize_sub_cloud(cloud, output_indices, std::make_tuple(-1, -1, -1), 4);
+        visualize_sub_cloud(cloud, output_indices, std::make_tuple(-1, -1, -1), 4);
     }
 
     // using euclidean clusterization group points
@@ -570,7 +570,10 @@ bool PositionEstimator::is_plane_perpendicular_to_the_floor(
 
     // if z coeff is close to zero in global frame then plane is perpendicular
     cout << "Z coeff of transformed normal vector: "<<abs(z1-z0)<<endl;
-    if (abs(z1 - z0) < 0.1)
+
+    float wall_perpen;
+    node_handle.param<float>("/wall_perpen", wall_perpen, 0.1);
+    if (abs(z1 - z0) < wall_perpen)
         return true;
     else
         return false;
