@@ -7,7 +7,7 @@ using namespace position_estimator;
 using namespace geometry_msgs;
 using namespace std;
 
-PositionEstimator::PositionEstimator(
+ClusterExtractor::ClusterExtractor(
     ros::NodeHandle& node_handle,
     bool debug=false
 ):
@@ -15,45 +15,25 @@ PositionEstimator::PositionEstimator(
 {
     // subscribers:
     std::string cloud_endpoint, detector_endpoint;
-    node_handle.param<std::string>("/cluster_extractor/cloud_input", cloud_endpoint, "/generated_on_pc/points");
+    node_handle.param<std::string>(
+        "/cluster_extractor/cloud_input", cloud_endpoint, "/generated_on_pc/points"
+    );
     cloud_sub_.subscribe(node_handle, cloud_endpoint, 1);
-    node_handle.param<std::string>("/detector_endpoint", detector_endpoint, "/detector/detection_bundle");
-    detect_sub_.subscribe(node_handle, detector_endpoint, 1);
-    cout<<cloud_endpoint<<" "<<detector_endpoint<<endl;
 
-    subb = node_handle.subscribe(cloud_endpoint, 1, &PositionEstimator::callback2, this);
+    node_handle.param<std::string>(
+        "/detector_endpoint", detector_endpoint, "/detector/detection_bundle"
+    );
+    detect_sub_.subscribe(node_handle, detector_endpoint, 1);
+
 
     // msg synchronization:
     sync_.reset(new Sync(MySyncPolicy(10), detect_sub_, cloud_sub_));
-    sync_->registerCallback(boost::bind(&PositionEstimator::callback, this, _1, _2));
+    sync_->registerCallback(
+        boost::bind(&ClusterExtractor::callback, this, _1, _2)
+    );
 
     // publishers:
-    publisher_ = node_handle.advertise<LabeledCluster>(
-            "/cluster_extractor/labeled_cluster", 10);
-
-
-    vis_pub = node_handle.advertise<visualization_msgs::Marker>( "visualization_marker", 0 );
-
-    if (debug) {
-        cloud_publisher_ = node_handle.advertise<pcl::PointCloud<PointType>>(
-                        "/position_estimator/points", 10);
-        rgb_cloud_publisher = node_handle.advertise<pcl::PointCloud<pcl::PointXYZRGB>>(
-                        "/position_estimator/points2", 10);
-        rgb_cloud_publisher2 = node_handle.advertise<pcl::PointCloud<pcl::PointXYZRGB>>(
-                        "/position_estimator/points3", 10);
-        rgb_cloud_publisher3 = node_handle.advertise<pcl::PointCloud<pcl::PointXYZRGB>>(
-                        "/position_estimator/points_roi", 10);
-        rgb_cloud_publisher4 = node_handle.advertise<pcl::PointCloud<pcl::PointXYZRGB>>(
-                        "/position_estimator/points_no_ground", 10);
-        rgb_cloud_publisher5 = node_handle.advertise<pcl::PointCloud<pcl::PointXYZRGB>>(
-                        "/position_estimator/points_no_walls", 10);
-        rgb_cloud_publisher6 = node_handle.advertise<pcl::PointCloud<pcl::PointXYZRGB>>(
-                        "/position_estimator/points_downsampled", 10);
- 
-    }
-
-    ros::Duration(1).sleep();
-
+    publisher_ = node_handle.advertise<LabeledCluster>("/cluster_extractor/labeled_cluster", 10);
 }
 
 void PositionEstimator::filter_cloud(
@@ -730,19 +710,16 @@ void PositionEstimator::get_clusters(
 
 
 
-void PositionEstimator::callback(
+void ClusterExtractor::callback(
            const DetectionBundle::ConstPtr& bundle_i,
            const pcl::PointCloud<PointType>::ConstPtr& cloud)
 {
     std::vector<object_detector::Detection> boxes_i = bundle_i->detections;
     for (int i = 0; i < bundle_i->size; ++i) {
-        cout << "========================" << endl;
         std::string label = boxes_i[i].class_name;
-        cout << "Detected object: " << label << endl;
 
         pcl::PointCloud<PointType>::Ptr  extracted_cluster (new pcl::PointCloud<PointType>);
         filter_cloud(boxes_i[i], cloud, extracted_cluster);
-        cout << "Filtered cloud size: " << extracted_cluster->points.size() << endl;
         if(extracted_cluster->points.size() == 0) continue;
 
         sensor_msgs::PointCloud2 output_cloud;
@@ -754,10 +731,6 @@ void PositionEstimator::callback(
         labeled_cluster->certainty = boxes_i[i].certainty; 
         publisher_.publish(labeled_cluster);
     }
-    float callback_lag;
-
-    node_handle.param<float>("/detector/callback_lag", callback_lag, 0);
-    ros::Duration(callback_lag).sleep();
 }
 
 
